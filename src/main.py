@@ -69,7 +69,7 @@ def main(args):
     if config["dataset"] == "ontonotes":
         path_gold = os.path.join(config["data"], "ontonotes-preprocessed", "ontonotes.test.english.v4_gold_conll")
     elif config["dataset"] == "craft":
-        path_gold = os.path.join(config["data"], "craft-preprocessed", "craft.test.english.v4_gold_conll")
+        path_gold = os.path.join(config["data"], "craft-preprocessed", "craft.test.english.gold_conll")
     else:
         raise Exception("Never occur.")
     path_eval = os.path.join(config["results"], base_dir, prefix + ".evaluation.json")
@@ -113,13 +113,13 @@ def main(args):
     sw.start("data")
 
     if config["dataset"] == "ontonotes":
-        train_dataset = np.load(os.path.join(config["caches"], f"ontonotes.train.english.{config['max_segment_len']}.npy"), allow_pickle=True)
-        dev_dataset = np.load(os.path.join(config["caches"], f"ontonotes.dev.english.{config['max_segment_len']}.npy"), allow_pickle=True)
-        test_dataset = np.load(os.path.join(config["caches"], f"ontonotes.test.english.{config['max_segment_len']}.npy"), allow_pickle=True)
+        train_dataset = np.load(os.path.join(config["caches"], f"ontonotes.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
+        dev_dataset = np.load(os.path.join(config["caches"], f"ontonotes.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
+        test_dataset = np.load(os.path.join(config["caches"], f"ontonotes.test.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
     elif config["dataset"] == "craft":
-        train_dataset = np.load(os.path.join(config["caches"], f"craft.train.english.{config['max_segment_len']}.npy"), allow_pickle=True)
-        dev_dataset = np.load(os.path.join(config["caches"], f"craft.dev.english.{config['max_segment_len']}.npy"), allow_pickle=True)
-        test_dataset = np.load(os.path.join(config["caches"], f"craft.test.english.{config['max_segment_len']}.npy"), allow_pickle=True)
+        train_dataset = np.load(os.path.join(config["caches"], f"craft.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
+        dev_dataset = np.load(os.path.join(config["caches"], f"craft.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
+        test_dataset = np.load(os.path.join(config["caches"], f"craft.test.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
     else:
         raise Exception("Never occur.")
 
@@ -157,8 +157,8 @@ def main(args):
               path_train_jsonl=path_train_jsonl,
               path_valid_jsonl=path_valid_jsonl,
               path_snapshot=path_snapshot,
-              path_pred=os.path.join(config["results"], base_dir, prefix + ".valid_pred.conll"),
-              path_gold=os.path.join(config["results"], base_dir, prefix + ".valid_gold.conll"))
+              path_pred=None,
+              path_gold=None)
 
     elif actiontype == "evaluate":
         with torch.no_grad():
@@ -197,8 +197,8 @@ def train(config,
           path_train_jsonl,
           path_valid_jsonl,
           path_snapshot,
-          path_pred,
-          path_gold):
+          path_pred=None,
+          path_gold=None):
     """
     Parameters
     ----------
@@ -209,8 +209,8 @@ def train(config,
     path_train_jsonl: str
     path_valid_jsonl: str
     path_snapshot: str
-    path_pred: str
-    path_gold: str
+    path_pred: str, default None
+    path_gold: str, default None
     """
     torch.autograd.set_detect_anomaly(True)
 
@@ -242,22 +242,22 @@ def train(config,
     # Initial validation phase
     #################
 
-    # with torch.no_grad():
-    #     scores = evaluate(config=config,
-    #                       system=system,
-    #                       dataset=dev_dataset,
-    #                       step=step,
-    #                       official=False,
-    #                       path_pred=path_pred,
-    #                       path_gold=path_gold)
-    #     scores["step"] = 0
-    #     writer_valid.write(scores)
-    #     utils.writelog(utils.pretty_format_dict(scores))
-    # 
-    #     bestscore_holder.compare_scores(scores["Average F1 (py)"], 0)
-    # 
-    #     system.save_model(path=path_snapshot)
-    #     utils.writelog("Saved model to %s" % path_snapshot)
+    with torch.no_grad():
+        scores = evaluate(config=config,
+                          system=system,
+                          dataset=dev_dataset,
+                          step=step,
+                          official=False,
+                          path_pred=path_pred,
+                          path_gold=path_gold)
+        scores["step"] = 0
+        writer_valid.write(scores)
+        utils.writelog(utils.pretty_format_dict(scores))
+
+        bestscore_holder.compare_scores(scores["Average F1 (py)"], 0)
+
+        system.save_model(path=path_snapshot)
+        utils.writelog("Saved model to %s" % path_snapshot)
 
     #################
     # /Initial validation phase

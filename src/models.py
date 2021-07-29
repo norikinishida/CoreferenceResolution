@@ -96,10 +96,12 @@ class Joshi2020(nn.Module):
         self.bert_emb_dim = self.bert.config.hidden_size
 
         # For span embedding
-        self.span_dim = self.bert_emb_dim * 3
+        self.span_dim = self.bert_emb_dim * 2
         self.span_dim += config['feature_dim'] # span width
+        if self.config["use_head_attn"]:
+            self.span_dim += self.bert_emb_dim
         self.embed_span_width = self.make_embedding(dict_size=self.max_span_width, dim=config["feature_dim"])
-        self.ffnn_mention_attn = self.make_ffnn(feat_dim=self.bert_emb_dim, hidden_dims=0, output_dim=1)
+        self.ffnn_mention_attn = self.make_ffnn(feat_dim=self.bert_emb_dim, hidden_dims=0, output_dim=1) if config["use_head_attn"] else None
 
         # For mention scoring
         self.ffnn_span_emb_score = self.make_ffnn(feat_dim=self.span_dim, hidden_dims=[config['ffnn_dim']] * config['ffnn_depth'], output_dim=1)
@@ -274,24 +276,27 @@ class Joshi2020(nn.Module):
         # Get span endpoints embeddings
         cand_span_start_embs = token_embs[cand_span_start_token_indices] # (n_cand_spans, tok_dim)
         cand_span_end_embs = token_embs[cand_span_end_token_indices] # (n_cand_spans, tok_dim)
+        cand_span_embs_list = [cand_span_start_embs, cand_span_end_embs]
 
         # Get span-width embedding
         cand_span_width_indices = cand_span_end_token_indices - cand_span_start_token_indices # (n_cand_spans,)
         cand_span_width_embs = self.embed_span_width(cand_span_width_indices) # (n_cand_spans, feat_dim)
         cand_span_width_embs = self.dropout(cand_span_width_embs)
+        cand_span_embs_list.append(cand_span_width_embs)
 
         # Get span attention embedding
-        token_attns = torch.squeeze(self.ffnn_mention_attn(token_embs), 1) # (n_tokens,)
-        cand_span_token_indices = torch.unsqueeze(torch.arange(0, n_tokens, device=self.device), 0).repeat(n_cand_spans, 1) # (n_cand_spans, n_tokens) TODO: OOM
-        cand_span_token_mask = (cand_span_token_indices >= torch.unsqueeze(cand_span_start_token_indices, 1)) \
-                                & (cand_span_token_indices <= torch.unsqueeze(cand_span_end_token_indices, 1)) # (n_cand_spans, n_tokens)
-        cand_span_token_mask = cand_span_token_mask.to(torch.float) # (n_cand_spans, n_tokens)
-        cand_span_token_attns = torch.log(cand_span_token_mask) + torch.unsqueeze(token_attns, 0) # (n_cand_spans, n_tokens); masking for spans (w/ broadcasting)
-        cand_span_token_attns = nn.functional.softmax(cand_span_token_attns, dim=1) # (n_cand_spans, n_tokens)
-        cand_span_ha_embs = torch.matmul(cand_span_token_attns, token_embs) # (n_cand_spans, tok_dim)
+        if self.config["use_head_attn"]:
+            token_attns = torch.squeeze(self.ffnn_mention_attn(token_embs), 1) # (n_tokens,)
+            doc_range = torch.arange(0, n_tokens).to(self.device) # (n_tokens,)
+            doc_range_1 = cand_span_start_token_indices.unsqueeze(1) <= doc_range # (n_cand_spans, n_tokens)
+            doc_range_2 = doc_range <= cand_span_end_token_indices.unsqueeze(1) # (n_cand_spans, n_tokens)
+            cand_span_token_mask = doc_range_1 & doc_range_2 # (n_cand_spans, n_tokens)
+            cand_span_token_attns = torch.log(cand_span_token_mask.float()) + torch.unsqueeze(token_attns, 0) # (n_cand_spans, n_tokens); masking for spans (w/ broadcasting)
+            cand_span_token_attns = nn.functional.softmax(cand_span_token_attns, dim=1) # (n_cand_spans, n_tokens)
+            cand_span_ha_embs = torch.matmul(cand_span_token_attns, token_embs) # (n_cand_spans, tok_dim)
+            cand_span_embs_list.append(cand_span_ha_embs)
 
         # concatenation
-        cand_span_embs_list = [cand_span_start_embs, cand_span_end_embs, cand_span_ha_embs]
         cand_span_embs = torch.cat(cand_span_embs_list, dim=1)  # (n_cand_spans, span_dim)
 
         ###################################

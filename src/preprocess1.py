@@ -12,15 +12,16 @@ import utils
 
 def minimize_language(args):
     tokenizer = util.get_tokenizer(args.tokenizer_name)
+    pretty_tokenizer_name = os.path.basename(args.tokenizer_name)
 
-    minimize_partition(partition='dev', args=args, tokenizer=tokenizer)
-    minimize_partition(partition='test', args=args, tokenizer=tokenizer)
-    minimize_partition(partition='train', args=args, tokenizer=tokenizer)
+    minimize_partition(partition='dev', args=args, tokenizer=tokenizer, pretty_tokenizer_name=pretty_tokenizer_name)
+    minimize_partition(partition='test', args=args, tokenizer=tokenizer, pretty_tokenizer_name=pretty_tokenizer_name)
+    minimize_partition(partition='train', args=args, tokenizer=tokenizer, pretty_tokenizer_name=pretty_tokenizer_name)
 
 
-def minimize_partition(partition, extension, args, tokenizer):
+def minimize_partition(partition, args, tokenizer, pretty_tokenizer_name):
     input_path = os.path.join(args.input_dir, f'{args.dataset_name}.{partition}.{args.language}.{args.extension}')
-    output_path = os.path.join(args.output_dir, f'{args.dataset_name}.{partition}.{args.language}.{args.seg_len}.jsonlines')
+    output_path = os.path.join(args.output_dir, f'{args.dataset_name}.{partition}.{args.language}.{args.seg_len}.{pretty_tokenizer_name}.jsonlines')
     doc_count = 0
     utils.writelog(f'Minimizing {input_path}...')
 
@@ -252,7 +253,7 @@ def skip_doc(doc_key):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_dir', type=str, required=True,
+    parser.add_argument('--input_dir', type=str, required=True)
     parser.add_argument('--output_dir', type=str, required=True)
     parser.add_argument('--dataset_name', type=str, required=True)
     parser.add_argument('--language', type=str, required=True)

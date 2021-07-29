@@ -52,7 +52,7 @@ done
 for seg_len in 384 512
 do
     python preprocess2.py \
-        --input_file ${STORAGE}/ontonotes-preprocessed/ontonotes.train.english.${seg_len}.jsonlines \
+        --input_file ${STORAGE}/ontonotes-preprocessed/ontonotes.train.english.${seg_len}.bert-base-cased.jsonlines \
         --is_training 1 \
         --tokenizer_name bert-base-cased \
         --seg_len ${seg_len}
@@ -60,7 +60,7 @@ do
     for split in dev test
     do
         python preprocess2.py \
-            --input_file ${STORAGE}/ontonotes-preprocessed/ontonotes.${split}.english.${seg_len}.jsonlines \
+            --input_file ${STORAGE}/ontonotes-preprocessed/ontonotes.${split}.english.${seg_len}.bert-base-cased.jsonlines \
             --is_training 0 \
             --tokenizer_name bert-base-cased \
             --seg_len ${seg_len}
@@ -77,9 +77,11 @@ python ./preprocessing/prepare_craft.py
 python ./preprocessing/remove_discontinuous_mentions.py
 
 mkdir ${STORAGE}/craft-preprocessed
-cat ${STORAGE}/craft-conll/train/*.continuous_only_conll >> ${STORAGE}/craft-preprocessed/craft.train.english.v4_gold_conll
-cat ${STORAGE}/craft-conll/dev/*.continuous_only_conll >> ${STORAGE}/craft-preprocessed/craft.dev.english.v4_gold_conll
-cat ${STORAGE}/craft-conll/test/*.continuous_only_conll >> ${STORAGE}/craft-preprocessed/craft.test.english.v4_gold_conll
+cat ${STORAGE}/craft-conll/train/*.continuous_only_conll >> ${STORAGE}/craft-preprocessed/craft.train.english.gold_conll
+cat ${STORAGE}/craft-conll/dev/*.continuous_only_conll >> ${STORAGE}/craft-preprocessed/craft.dev.english.gold_conll
+cat ${STORAGE}/craft-conll/test/*.continuous_only_conll >> ${STORAGE}/craft-preprocessed/craft.test.english.gold_conll
+
+TOKENIZER=microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext
 
 for seg_len in 384 512
 do
@@ -89,24 +91,24 @@ do
         --dataset_name craft \
         --language english \
         --extension gold_conll \
-        --tokenizer bert-base-cased \
+        --tokenizer ${TOKENIZER} \
         --seg_len ${seg_len}
 done
 
 for seg_len in 384 512
 do
     python preprocess2.py \
-        --input_file ${STORAGE}/craft-preprocessed/craft.train.english.${seg_len}.jsonlines \
+        --input_file ${STORAGE}/craft-preprocessed/craft.train.english.${seg_len}.`basename ${TOKENIZER}`.jsonlines \
         --is_training 1 \
-        --tokenizer_name bert-base-cased \
+        --tokenizer_name ${TOKENIZER} \
         --seg_len ${seg_len}
 
     for split in dev test
     do
         python preprocess2.py \
-            --input_file ${STORAGE}/craft-preprocessed/craft.${split}.english.${seg_len}.jsonlines \
+            --input_file ${STORAGE}/craft-preprocessed/craft.${split}.english.${seg_len}.`basename ${TOKENIZER}`.jsonlines \
             --is_training 0 \
-            --tokenizer_name bert-base-cased \
+            --tokenizer_name ${TOKENIZER} \
             --seg_len ${seg_len}
     done
 done
@@ -127,4 +129,5 @@ download_spanbert() {
 
 download_spanbert spanbert_hf_base
 download_spanbert spanbert_hf
+
 
