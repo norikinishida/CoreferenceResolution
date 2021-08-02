@@ -35,11 +35,11 @@ You need to edit the following files according to your environment.
 
 The following files will be generated:
 
+- /path/to/data/ontonotes/
+- /path/to/data/ontonotes-preprocessed/
 - /path/to/data/craft/
 - /path/to/data/craft-conll/
 - /path/to/data/craft-preprocessed/
-- /path/to/data/ontonotes/
-- /path/to/data/ontonotes-preprocessed/
 - /path/to/caches/ontonotes.{train,dev,test}.english.{384,512}.\<pretrained-bert-name\>.npy
 - /path/to/caches/craft.{train,dev,test}.english.{384,512}.\<pretrained-bert-name\>.npy
 
@@ -49,32 +49,32 @@ Pre-trained BERT models are specified in ./config/main.conf.
 ## Training
 
 ```
-python main.py --gpu 0 --config joshi2020_spanbert_large_craft --actiontype train
+python main.py --gpu 0 --config joshi2020_spanbert_large_ontonotes --actiontype train
 ```
 
-If you train the system on OntoNotes, change the config name to "joshi2020_spanbert_large_ontonotes".
+If you train the system on OntoNotes, change the config name to "joshi2020_pubmedbert_large_craft".
 Details can be found in ./run_main.sh.
 
 The following files will be generated:
 
-- /path/to/results/main.joshi2020_spanbert_large_craft/\<date\>.training.log
-- /path/to/results/main.joshi2020_spanbert_large_craft/\<date\>.training.jsonl
-- /path/to/results/main.joshi2020_spanbert_large_craft/\<date\>.validation.jsonl
-- /path/to/results/main.joshi2020_spanbert_large_craft/\<date\>.model
+- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.training.log
+- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.training.jsonl
+- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.validation.jsonl
+- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.model
 
 ## Evaluation
 
 ```
-python main.py --gpu 0 --config joshi2020_spanbert_large_craft --prefix <please_specify_prefix> --actiontype evaluate
+python main.py --gpu 0 --config joshi2020_spanbert_large_ontonotes --prefix <please_specify_prefix> --actiontype evaluate
 ```
 
 Details can be found in ./run_main.sh.
 
 The following files will be generated:
 
-- /path/to/results/main.joshi2020_spanbert_large_craft/\<date\>.evaluation.log
-- /path/to/results/main.joshi2020_spanbert_large_craft/\<date\>.evaluation.conll
-- /path/to/results/main.joshi2020_spanbert_large_craft/\<date\>.evaluation.jsonl
+- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.evaluation.log
+- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.evaluation.conll
+- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.evaluation.jsonl
 
 ## Evaluation on CRAFT using the official docker evaluation script
 
@@ -88,7 +88,7 @@ Before running the shell script, you need to edit the paths (e.g., "CRAFT", "PRE
 
 The following files will be generated:
 
-- /path/to/results/main.joshi2020_spanbert_large_craft/files-to-evaluate/\<filename\>.conll
-- /path/to/results/main.joshi2020_spanbert_large_craft/files-to-evaluate/coref_results.tsv
+- /path/to/results/main.joshi2020_pubmedbert_large_craft/files-to-evaluate/\<filename\>.conll
+- /path/to/results/main.joshi2020_pubmedbert_large_craft/files-to-evaluate/coref_results.tsv
 
 

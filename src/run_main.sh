@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 
 GPU=0
-# CONFIG=joshi2020_spanbert_large_ontonotes
-CONFIG=joshi2020_spanbert_large_craft
+CONFIG=joshi2020_spanbert_large_ontonotes
+# CONFIG=joshi2020_pubmedbert_large_craft
 
 # Training
 python main.py \
