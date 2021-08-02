@@ -4,10 +4,10 @@ import json
 import os
 import re
 
+import utils
+
 import conll
 import util
-
-import utils
 
 
 def minimize_language(args):
