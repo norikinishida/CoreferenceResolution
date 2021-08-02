@@ -67,10 +67,12 @@ do
     done
 done
 
+cp ${STORAGE}/ontonotes-preprocessed/*.v4_gold_conll ${STORAGE}/../caches/
 
-# ##################
-# # CRAFT
-# ##################
+
+##################
+# CRAFT
+##################
 
 
 python ./preprocessing/prepare_craft.py
@@ -112,6 +114,11 @@ do
             --seg_len ${seg_len}
     done
 done
+
+cp ${STORAGE}/craft-preprocessed/*.gold_conll ${STORAGE}/../caches/
+# cat ${STORAGE}/craft-conll/train/*.conll >> ${STORAGE}/caches/craft.train.english.gold_original_conll
+# cat ${STORAGE}/craft-conll/dev/*.conll >> ${STORAGE}/caches/craft.dev.english.gold_original_conll
+# cat ${STORAGE}/craft-conll/test/*.conll >> ${STORAGE}/caches/craft.test.english.gold_original_conll
 
 
 ##################

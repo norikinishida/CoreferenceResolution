@@ -11,10 +11,6 @@ BEGIN_DOCUMENT_REGEX = re.compile(r"#begin document \((.*)\); part (\d+)")  # Fi
 COREF_RESULTS_REGEX = re.compile(r".*Coreference: Recall: \([0-9.]+ / [0-9.]+\) ([0-9.]+)%\tPrecision: \([0-9.]+ / [0-9.]+\) ([0-9.]+)%\tF1: ([0-9.]+)%.*", re.DOTALL)
 
 
-def get_doc_key(doc_id, part):
-    return "{}_{}".format(doc_id, int(part))
-
-
 def evaluate_conll(gold_path, pred_path, predictions, subtoken_maps, official_stdout=True):
     # with tempfile.NamedTemporaryFile(delete=True, mode="w") as pred_file:
     with open(pred_path, "w") as pred_file:
@@ -85,6 +81,10 @@ def output_conll(input_file, output_file, predictions, subtoken_map):
             word_index += 1
 
 
+def get_doc_key(doc_id, part):
+    return "{}_{}".format(doc_id, int(part))
+
+
 def official_conll_eval(gold_path, pred_path, metric, official_stdout=True):
     cmd = ["conll-2012/scorer/v8.01/scorer.pl", metric, gold_path, pred_path, "none"]
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -103,5 +103,8 @@ def official_conll_eval(gold_path, pred_path, metric, official_stdout=True):
     recall = float(coref_results_match.group(1))
     precision = float(coref_results_match.group(2))
     f1 = float(coref_results_match.group(3))
-    return {"r": recall, "p": precision, "f": f1}
+    # return {"r": recall, "p": precision, "f": f1}
+    return {"p": precision, "r": recall, "f": f1}
+
+
 

@@ -8,12 +8,6 @@ from sklearn.utils.linear_assignment_ import linear_assignment
 from scipy.optimize import linear_sum_assignment
 
 
-def f1(p_num, p_den, r_num, r_den, beta=1):
-    p = 0 if p_den == 0 else p_num / float(p_den)
-    r = 0 if r_den == 0 else r_num / float(r_den)
-    return 0 if p + r == 0 else (1 + beta * beta) * p * r / (beta * beta * p + r)
-
-
 class CorefEvaluator(object):
     def __init__(self):
         self.evaluators = [Evaluator(m) for m in (muc, b_cubed, ceafe)]
@@ -71,11 +65,17 @@ class Evaluator(object):
         return self.p_num, self.p_den, self.r_num, self.r_den
 
 
-def evaluate_documents(documents, metric, beta=1):
-    evaluator = Evaluator(metric, beta=beta)
-    for document in documents:
-        evaluator.update(document)
-    return evaluator.get_precision(), evaluator.get_recall(), evaluator.get_f1()
+def f1(p_num, p_den, r_num, r_den, beta=1):
+    p = 0 if p_den == 0 else p_num / float(p_den)
+    r = 0 if r_den == 0 else r_num / float(r_den)
+    return 0 if p + r == 0 else (1 + beta * beta) * p * r / (beta * beta * p + r)
+
+
+# def evaluate_documents(documents, metric, beta=1):
+#     evaluator = Evaluator(metric, beta=beta)
+#     for document in documents:
+#         evaluator.update(document)
+#     return evaluator.get_precision(), evaluator.get_recall(), evaluator.get_f1()
 
 
 def b_cubed(clusters, mention_to_gold):
@@ -115,10 +115,6 @@ def muc(clusters, mention_to_gold):
     return tp, p
 
 
-def phi4(c1, c2):
-    return 2 * len([m for m in c1 if m in c2]) / float(len(c1) + len(c2))
-
-
 def ceafe(clusters, gold_clusters):
     clusters = [c for c in clusters if len(c) != 1]
     scores = np.zeros((len(gold_clusters), len(clusters)))
@@ -130,6 +126,10 @@ def ceafe(clusters, gold_clusters):
     # matching2 = np.transpose(np.asarray(matching2))
     similarity = sum(scores[matching[:, 0], matching[:, 1]])
     return similarity, len(clusters), similarity, len(gold_clusters)
+
+
+def phi4(c1, c2):
+    return 2 * len([m for m in c1 if m in c2]) / float(len(c1) + len(c2))
 
 
 def lea(clusters, mention_to_gold):

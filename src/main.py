@@ -67,9 +67,9 @@ def main(args):
         path_log = os.path.join(config["results"], base_dir, prefix + ".evaluation.log")
     path_pred = os.path.join(config["results"], base_dir, prefix + ".evaluation.conll")
     if config["dataset"] == "ontonotes":
-        path_gold = os.path.join(config["data"], "ontonotes-preprocessed", "ontonotes.test.english.v4_gold_conll")
+        path_gold = os.path.join(config["caches"], "ontonotes.test.english.v4_gold_conll")
     elif config["dataset"] == "craft":
-        path_gold = os.path.join(config["data"], "craft-preprocessed", "craft.test.english.gold_conll")
+        path_gold = os.path.join(config["caches"], "craft.test.english.gold_conll")
     else:
         raise Exception("Never occur.")
     path_eval = os.path.join(config["results"], base_dir, prefix + ".evaluation.json")
@@ -461,9 +461,62 @@ def evaluate(config,
     doc_to_prediction = {}
     for data in pyprind.prog_bar(dataset):
         # data = data[:7] # Strip out gold (cf., old code)
-        (predicted_mentions, predicted_clusters, antecedents), evaluator = \
+        predicted_clusters, evaluator = \
                 system.predict(data=data, evaluator=evaluator, gold_clusters=data.gold_clusters)
-        doc_to_prediction[data.doc_key] = predicted_clusters
+        if not official:
+            # for time saving
+            doc_to_prediction[data.doc_key] = predicted_clusters # unused
+        else:
+            # NOTE: Multiple subtoken-level spans can be the same word-level span.
+
+            # Merge clusters if any clusters have common mentions
+            merged_clusters = []
+            for cluster in predicted_clusters:
+                existing = None
+                for mention in cluster:
+                    start, end = mention
+                    start, end = data.subtoken_map[start], data.subtoken_map[end]
+                    for merged_cluster in merged_clusters:
+                        for mention2 in merged_cluster:
+                            start2, end2 = mention2
+                            start2, end2 = data.subtoken_map[start2], data.subtoken_map[end2]
+                            if start == start2 and end == end2:
+                                existing = merged_cluster
+                                break
+                        if existing is not None:
+                            break
+                    if existing is not None:
+                        break
+                if existing is not None:
+                    utils.writelog("[doc_key: %s] Merging clusters" % data.doc_key)
+                    existing.update(cluster)
+                else:
+                    merged_clusters.append(set(cluster))
+            merged_clusters = [list(cluster) for cluster in merged_clusters]
+
+            # Merge redundant mentions
+            new_predicted_clusters = []
+            subtokens = utils.flatten_lists(data.sentences)
+            for cluster in merged_clusters:
+                new_cluster = []
+                history = []
+                for start_sub, end_sub in sorted(cluster, key=lambda tpl: tpl[1] - tpl[0]):
+                    start_word, end_word = data.subtoken_map[start_sub], data.subtoken_map[end_sub]
+                    existing = None
+                    for start_sub2, end_sub2, start_word2, end_word2 in history:
+                        if start_word == start_word2 and end_word == end_word2:
+                            existing = (start_sub2, end_sub2, start_word2, end_word2)
+                            break
+                    if existing is None:
+                        history.append((start_sub, end_sub, start_word, end_word))
+                        new_cluster.append((start_sub, end_sub))
+                    else:
+                        start_sub2, end_sub2, _, _ = existing
+                        utils.writelog("[doc_key: %s] Merging mentions: '%s' and '%s'" % (data.doc_key, subtokens[start_sub: end_sub + 1], subtokens[start_sub2: end_sub2 + 1]))
+                new_cluster = sorted(new_cluster, key=lambda tpl: tpl)
+                new_predicted_clusters.append(new_cluster)
+
+            doc_to_prediction[data.doc_key] = new_predicted_clusters
 
     # 公式スクリプトによる評価
     if official:
@@ -473,8 +526,10 @@ def evaluate(config,
                                              predictions=doc_to_prediction,
                                              subtoken_maps=subtoken_maps,
                                              official_stdout=True)
-        official_f1 = sum(results["f"] for results in conll_results.values()) / len(conll_results)
-        scores["Average F1 (conll)"] = official_f1
+        scores["MUC"] = conll_results["muc"]
+        scores["B^3"] = conll_results["bcub"]
+        scores["CEAFe"]= conll_results["ceafe"]
+        scores["Average F1 (conll)"] = sum(results["f"] for results in conll_results.values()) / len(conll_results)
 
     precision, recall, f1 = evaluator.get_prf()
     scores["Average precision (py)"] = precision * 100.0
@@ -482,8 +537,6 @@ def evaluate(config,
     scores["Average F1 (py)"] = f1 * 100.0
 
     return scores
-
-
 
 
 if __name__ == "__main__":

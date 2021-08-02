@@ -232,29 +232,34 @@ class Joshi2020(nn.Module):
 
         ###################################
         # <2> Candidate spans
-        #
-        # cand_span_start_token_indices =
-        #   [[0, 0, 0, ...],
-        #    [1, 1, 1, ...],
-        #    [2, 2, 2, ...],
-        #    ...
-        #    [n_tokens-1, n_tokens-1, n_tokens-1, ...]]
-        #
-        # cand_span_end_token_indices =
-        #   [[0, 1, 2, ...],
-        #    [1, 2, 3, ...],
-        #    [2, 3, 4, ...],
-        #    ...
-        #    [n_tokens-1, n_tokens, n_tokens+1, ...]]
-        #
         ###################################
+        """
+        cand_span_start_token_indices =
+          [[0, 0, 0, ...],
+           [1, 1, 1, ...],
+           [2, 2, 2, ...],
+           ...
+           [n_tokens-1, n_tokens-1, n_tokens-1, ...]]
 
-        sentence_indices = sentence_map  # (n_tokens,); sentence index of i-th token
+        cand_span_end_token_indices =
+          [[0, 1, 2, ...],
+           [1, 2, 3, ...],
+           [2, 3, 4, ...],
+           ...
+           [n_tokens-1, n_tokens, n_tokens+1, ...]]
+        """
+
         cand_span_start_token_indices = torch.unsqueeze(torch.arange(0, n_tokens, device=self.device), 1).repeat(1, self.max_span_width) # (n_tokens, max_span_width)
         cand_span_end_token_indices = cand_span_start_token_indices + torch.arange(0, self.max_span_width, device=self.device) # (n_tokens, max_span_width)
-        cand_span_start_sent_indices = sentence_indices[cand_span_start_token_indices] # (n_tokens, max_span_width); sentence index
-        cand_span_end_sent_indices = sentence_indices[torch.min(cand_span_end_token_indices, torch.tensor(n_tokens - 1, device=self.device))] # (n_tokens, max_span_width)
-        cand_span_mask = (cand_span_end_token_indices < n_tokens) & (cand_span_start_sent_indices == cand_span_end_sent_indices)
+        # sentence index of each token
+        sentence_indices = sentence_map  # (n_tokens,); sentence index of i-th token
+        clamped_cand_span_end_token_indices = torch.min(cand_span_end_token_indices, torch.tensor(n_tokens - 1, device=self.device))
+        cand_span_start_sent_indices = sentence_indices[cand_span_start_token_indices] # (n_tokens, max_span_width)
+        cand_span_end_sent_indices = sentence_indices[clamped_cand_span_end_token_indices] # (n_tokens, max_span_width)
+        # condition: within document boundary & within same sentence
+        cand_span_mask = cand_span_end_token_indices < n_tokens
+        cand_span_mask = cand_span_mask & (cand_span_start_sent_indices == cand_span_end_sent_indices)
+        # apply
         cand_span_start_token_indices = cand_span_start_token_indices[cand_span_mask]  # (n_cand_spans,)
         cand_span_end_token_indices = cand_span_end_token_indices[cand_span_mask]  # (n_cand_spans,)
 
@@ -471,17 +476,22 @@ class Joshi2020(nn.Module):
 
         # A integer matrix, where (i,j)-th element is the cluster id of i-th span and j-th antecedent
         top_antecedent_cluster_ids = top_span_cluster_ids[top_antecedent_indices] # (n_top_spans, n_ant_spans)
+
         # A integer matrix, where (i,j)-th element is negative if the antecedent is invalid
         top_antecedent_cluster_ids = top_antecedent_cluster_ids + (top_antecedent_mask.to(torch.long) - 1) * 100000
+
         # A bool matrix, where (i,j)-th element indicates whether j-th antecedent is valid and belongs to the same cluster with i-th span (True), or not (False)
         gold_cluster_indicators = (top_antecedent_cluster_ids == torch.unsqueeze(top_span_cluster_ids, 1)) # (n_top_spans, n_ant_spans)
+
         # A bool vector, where i-th element indicates whether i-th span is valid (True) or not (False)
         non_dummy_indicators = torch.unsqueeze(top_span_cluster_ids > 0, 1) # (n_top_spans, 1)
         # A bool matrix, where rows of invalid spans are masked with False
         masked_gold_cluster_indicators = gold_cluster_indicators & non_dummy_indicators # (n_top_spans, n_ant_spans)
+
         # A bool vector, where i-th element indicates whether the span is "invalid" (True) or not (False)
         dummy_cluster_indicators = torch.logical_not(masked_gold_cluster_indicators.any(dim=1, keepdims=True)) # (n_top_spans, 1)
         n_singleton_or_invalid_top_spans = float(dummy_cluster_indicators.to(torch.long).sum())
+
         # A binary matrix, where (i,j)-th element indicates whether the antecedent is valid and belongs to the same cluster with i-th span (1) or not (0)
         complete_gold_cluster_indicators = torch.cat([dummy_cluster_indicators, masked_gold_cluster_indicators], dim=1) # (n_top_spans, 1+n_ant_spans)
         complete_gold_cluster_indicators = complete_gold_cluster_indicators.to(torch.float)

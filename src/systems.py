@@ -134,7 +134,7 @@ class CorefSystem:
 
         Returns
         -------
-        (list[(int, int)], list[list[(int, int)]], list[int])
+        list[list[(int, int)]]
         CorefEvaluator or None
         """
         if evaluator is None or gold_clusters is None:
@@ -174,50 +174,75 @@ class CorefSystem:
         antecedent_idx = antecedent_idx.tolist()
         antecedent_scores = antecedent_scores.tolist()
 
+        # Get predicted antecedents
+        predicted_antecedents = self.get_predicted_antecedents(antecedent_idx=antecedent_idx, antecedent_scores=antecedent_scores)
+
         # Get clusters
-        predicted_mentions = [(s, e) for s, e in zip(span_starts, span_ends)]
-        predicted_clusters, mention_to_cluster_id, antecedents = self.get_predicted_clusters(
-                                                                span_starts=span_starts,
-                                                                span_ends=span_ends,
-                                                                antecedent_idx=antecedent_idx,
-                                                                antecedent_scores=antecedent_scores)
+        predicted_clusters, mention_to_predicted = self.get_predicted_clusters(
+                                                            span_starts=span_starts,
+                                                            span_ends=span_ends,
+                                                            predicted_antecedents=predicted_antecedents)
 
         if evaluator is None:
-            return [predicted_mentions, predicted_clusters, antecedents], None
+            return predicted_clusters, None
 
         # Update evaluator
-        mention_to_predicted = {m: predicted_clusters[cluster_idx] for m, cluster_idx in mention_to_cluster_id.items()}
+        # mention_to_predicted = {m: predicted_clusters[cluster_idx] for m, cluster_idx in mention_to_cluster_id.items()}
         gold_clusters = [tuple(tuple(m) for m in cluster) for cluster in gold_clusters]
         mention_to_gold = {m: cluster for cluster in gold_clusters for m in cluster}
         evaluator.update(predicted_clusters, gold_clusters, mention_to_predicted, mention_to_gold)
 
-        return [predicted_mentions, predicted_clusters, antecedents], evaluator
+        return predicted_clusters, evaluator
 
-    def update_evaluator(self, span_starts, span_ends, antecedent_idx, antecedent_scores, gold_clusters, evaluator):
-        predicted_clusters, mention_to_cluster_id, _ = self.get_predicted_clusters(span_starts, span_ends, antecedent_idx, antecedent_scores)
-        mention_to_predicted = {m: predicted_clusters[cluster_idx] for m, cluster_idx in mention_to_cluster_id.items()}
-        gold_clusters = [tuple(tuple(m) for m in cluster) for cluster in gold_clusters]
-        mention_to_gold = {m: cluster for cluster in gold_clusters for m in cluster}
-        evaluator.update(predicted_clusters, gold_clusters, mention_to_predicted, mention_to_gold)
-        return predicted_clusters
+    def get_predicted_antecedents(self, antecedent_idx, antecedent_scores):
+        """
+        Parameters
+        ----------
+        antecedent_idx: list[list[int]]
+            shape (n_top_spans, n_ant_spans)
+        antecedent_scores: list[list[float]]
+            shape (n_top_spans, 1 + n_ant_spans)
 
-    def get_predicted_clusters(self, span_starts, span_ends, antecedent_idx, antecedent_scores, require_indices=False):
-        """ CPU list input """
-        # Get predicted antecedents
-        predicted_antecedents = self.get_predicted_antecedents(antecedent_idx, antecedent_scores)
+        Returns
+        -------
+        list[int]
+        """
+        predicted_antecedents = []
+        for i, idx in enumerate(np.argmax(antecedent_scores, axis=1) - 1):
+            if idx < 0:
+                # The dummy antecedent is selected.
+                # Since the coreference score to the dummy antecedent is always set to zero,
+                # the coreference scores to the non-dummy candidates are all negative.
+                predicted_antecedents.append(-1)
+            else:
+                # The maximum antecedent score is positive,
+                # and the selected antecedent is not dummy.
+                predicted_antecedents.append(antecedent_idx[i][idx])
+        return predicted_antecedents
 
+    def get_predicted_clusters(self, span_starts, span_ends, predicted_antecedents):
+        """
+        Parameters
+        ----------
+        span_starts: list[int]
+        span_ends: list[int]
+        predicted_antecedents: list[int]
+
+        Returns
+        -------
+        list[list[(int, int)]]
+        dict[(int, int), int]
+        """
         # Get predicted clusters
-        predicted_clusters = [] # list of list of (int, int)
-        mention_to_cluster_id = {} # {(int, int): int}
-        if require_indices:
-            predicted_clusters_by_indices = [] # list of list of int
-        for span_i, antecedent_i in enumerate(predicted_antecedents):
+        predicted_clusters = [] # list[list[(int, int)]]
+        mention_to_cluster_id = {} # dict[(int, int), list[(int, int)]]
+        for mention_i, antecedent_i in enumerate(predicted_antecedents):
             # No coreference
             if antecedent_i < 0:
                 continue
 
             # Check whether the coreference is valid
-            assert antecedent_i < span_i, f'antecedent (index {antecedent_i}) must appear earlier than span (index {span_i})'
+            assert antecedent_i < mention_i, f'antecedent (index {antecedent_i}) must appear earlier than span (index {mention_i})'
 
             # Add antecedent to cluster (if the antecedent is chosen for the first time)
             antecedent = (int(span_starts[antecedent_i]), int(span_ends[antecedent_i])) # Antecedent span
@@ -227,32 +252,20 @@ class CorefSystem:
                 antecedent_cluster_id = len(predicted_clusters) # New cluster ID
                 predicted_clusters.append([antecedent]) # Add antecedent to cluster
                 mention_to_cluster_id[antecedent] = antecedent_cluster_id
-                if require_indices:
-                    predicted_clusters_by_indices.append([antecedent_i])
+            else:
+                # This (antecedent) span is already selected as an antecedent of the previous mention(s)
+                pass
 
             # Add mention to cluster
-            mention = (int(span_starts[span_i]), int(span_ends[span_i])) # Mention span
+            mention = (int(span_starts[mention_i]), int(span_ends[mention_i])) # Mention span
+            assert not mention in predicted_clusters[antecedent_cluster_id]
+            assert not mention in mention_to_cluster_id
             predicted_clusters[antecedent_cluster_id].append(mention) # Add mention to cluster
             mention_to_cluster_id[mention] = antecedent_cluster_id
-            if require_indices:
-                predicted_clusters_by_indices[antecedent_cluster_id].append(span_i)
 
         predicted_clusters = [tuple(c) for c in predicted_clusters]
-        # predicted_clusters_by_indices = [tuple(c) for c in predicted_clusters_by_indices]
-        if require_indices:
-            return predicted_clusters, mention_to_cluster_id, predicted_antecedents, predicted_clusters_by_indices
-        else:
-            return predicted_clusters, mention_to_cluster_id, predicted_antecedents
-
-    def get_predicted_antecedents(self, antecedent_idx, antecedent_scores):
-        """ CPU list input """
-        predicted_antecedents = []
-        for i, idx in enumerate(np.argmax(antecedent_scores, axis=1) - 1):
-            if idx < 0:
-                predicted_antecedents.append(-1)
-            else:
-                predicted_antecedents.append(antecedent_idx[i][idx])
-        return predicted_antecedents
+        mention_to_predicted = {m: predicted_clusters[cluster_idx] for m, cluster_idx in mention_to_cluster_id.items()}
+        return predicted_clusters, mention_to_predicted
 
     def truncate_example(self,
                          input_ids,
@@ -291,9 +304,5 @@ class CorefSystem:
         gold_mention_cluster_map = gold_mention_cluster_map[gold_spans]
 
         return input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map, \
-               is_training, gold_starts, gold_ends, gold_mention_cluster_map
-
-
-
-
+                is_training, gold_starts, gold_ends, gold_mention_cluster_map
 
