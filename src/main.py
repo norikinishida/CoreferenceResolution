@@ -518,7 +518,7 @@ def evaluate(config,
 
             doc_to_prediction[data.doc_key] = new_predicted_clusters
 
-    # 公式スクリプトによる評価
+    # Evaluate by the official script in the CoNLL 2012 shared task
     if official:
         subtoken_maps = {data.doc_key: data.subtoken_map for data in dataset}
         conll_results = conll.evaluate_conll(gold_path=path_gold,
@@ -530,6 +530,20 @@ def evaluate(config,
         scores["B^3"] = conll_results["bcub"]
         scores["CEAFe"]= conll_results["ceafe"]
         scores["Average F1 (conll)"] = sum(results["f"] for results in conll_results.values()) / len(conll_results)
+
+        # We also save clusters in json format
+        # new_doc_to_prediction = {} # dict[str, list[list[(int, int)]]]
+        # for doc_key, clusters in doc_to_prediction.items():
+        #     new_doc_to_prediction[doc_key] = [] # list[list[(int, int)]]
+        #     for cluster in clusters:
+        #         new_cluster = [] # list[(int, int)]
+        #         for start, end in cluster:
+        #             start, end = subtoken_maps[doc_key][start], subtoken_maps[doc_key][end] # word-level span
+        #             new_cluster.append((start, end))
+        #         assert len(new_cluster) == len(set(new_cluster))
+        #         new_doc_to_prediction[doc_key].append(new_cluster)
+        # utils.write_json(path_pred.replace(".conll", ".clusters"), new_doc_to_prediction)
+        utils.write_json(path_pred.replace(".conll", ".clusters"), doc_to_prediction)
 
     precision, recall, f1 = evaluator.get_prf()
     scores["Average precision (py)"] = precision * 100.0

@@ -320,13 +320,18 @@ class Joshi2020(nn.Module):
         # <5> Top spans
         ###################################
 
-        if do_loss:
-            # We force the model to include the gold mentions in the top-ranked candidate spans during training
-            cand_span_mention_scores_editted = torch.clone(cand_span_mention_scores)
-            cand_span_mention_scores_editted[cand_span_cluster_ids > 0] = 100000.0 # Set large value to the gold mentions for trianing
-            cand_span_indices_sorted_by_score = torch.argsort(cand_span_mention_scores_editted, descending=True).tolist() # (n_cand_spans,); candidate-span index
-        else:
-            cand_span_indices_sorted_by_score = torch.argsort(cand_span_mention_scores, descending=True).tolist() # (n_cand_spans,); candidate-span index
+        # TODO
+        #
+        # if do_loss:
+        #     # We force the model to include the gold mentions in the top-ranked candidate spans during training
+        #     cand_span_mention_scores_editted = torch.clone(cand_span_mention_scores)
+        #     cand_span_mention_scores_editted[cand_span_cluster_ids > 0] = 100000.0 # Set large value to the gold mentions for trianing
+        #     cand_span_indices_sorted_by_score = torch.argsort(cand_span_mention_scores_editted, descending=True).tolist() # (n_cand_spans,); candidate-span index
+        # else:
+        #     cand_span_indices_sorted_by_score = torch.argsort(cand_span_mention_scores, descending=True).tolist() # (n_cand_spans,); candidate-span index
+        #
+        cand_span_indices_sorted_by_score = torch.argsort(cand_span_mention_scores, descending=True).tolist() # (n_cand_spans,); candidate-span index
+
         n_top_spans = int(min(self.config['max_num_extracted_spans'], self.config['top_span_ratio'] * n_tokens))
         cand_span_start_token_indices_cpu = cand_span_start_token_indices.tolist() # (n_cand_spans,); token index
         cand_span_end_token_indices_cpu = cand_span_end_token_indices.tolist() # (n_cand_spans,); token index

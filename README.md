@@ -52,7 +52,7 @@ Pre-trained BERT models are specified in ./config/main.conf.
 python main.py --gpu 0 --config joshi2020_spanbert_large_ontonotes --actiontype train
 ```
 
-If you train the system on OntoNotes, change the config name to "joshi2020_pubmedbert_large_craft".
+If you train the system on OntoNotes, change the config name to "joshi2020_pubmedbert_base_craft".
 Details can be found in ./run_main.sh.
 
 The following files will be generated:
