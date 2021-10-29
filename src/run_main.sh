@@ -1,12 +1,9 @@
 #!/usr/bin/env sh
 
 GPU=0
-# CONFIG=joshi2020_spanbertlarge_ontonotes
-CONFIG=joshi2020discdep01_spanbertlarge_ontonotes
-
-# CONFIG=joshi2020_spanbertlarge_craft
+CONFIG=joshi2020_spanbertlarge_ontonotes
+# CONFIG=joshi2020_spanbertbase_craft
 # CONFIG=joshi2020_pubmedbertbase_craft
-
 
 # Training
 python main.py \
@@ -16,10 +13,8 @@ python main.py \
 
 # Evaluation
 # MYPREFIX=Jul28_17-28-11
-# MYPREFIX=Jul28_22-24-14
 # python main.py \
 #     --gpu ${GPU} \
 #     --config ${CONFIG} \
 #     --prefix ${MYPREFIX} \
 #     --actiontype evaluate
-
