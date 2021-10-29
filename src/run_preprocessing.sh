@@ -1,7 +1,8 @@
 #!/bin/bash
 
-STORAGE=/home/nishida/storage/projects/discourse/CoreferenceResolution/data
+STORAGE=/home/nishida/storage/projects/discourse/coreference-resolution/data
 ONTONOTES=/home/nishida/storage/dataset/OntoNotes-Release-5.0/ontonotes-release-5.0
+ACL=/home/nishida/storage/dataset/ACL-Coref/Coreference_annotated_corpus/head_auto_conlls
 
 
 ##################
@@ -37,32 +38,34 @@ cat ${STORAGE}/ontonotes/conll-2012/v4/data/train/data/english/annotations/*/*/*
 cat ${STORAGE}/ontonotes/conll-2012/v4/data/development/data/english/annotations/*/*/*/*.v4_gold_conll >> ${STORAGE}/ontonotes-preprocessed/ontonotes.dev.english.v4_gold_conll
 cat ${STORAGE}/ontonotes/conll-2012/v4/data/test/data/english/annotations/*/*/*/*.v4_gold_conll >> ${STORAGE}/ontonotes-preprocessed/ontonotes.test.english.v4_gold_conll
 
+TOKENIZER=bert-base-cased
+
 for seg_len in 384 512
 do
-    python preprocess1.py \
+    python ./preprocessing/preprocess1.py \
         --input_dir ${STORAGE}/ontonotes-preprocessed \
         --output_dir ${STORAGE}/ontonotes-preprocessed \
         --dataset_name ontonotes \
         --language english \
         --extension v4_gold_conll \
-        --tokenizer_name bert-base-cased \
+        --tokenizer_name ${TOKENIZER} \
         --seg_len ${seg_len}
 done
 
 for seg_len in 384 512
 do
-    python preprocess2.py \
-        --input_file ${STORAGE}/ontonotes-preprocessed/ontonotes.train.english.${seg_len}.bert-base-cased.jsonlines \
+    python ./preprocessing/preprocess2.py \
+        --input_file ${STORAGE}/ontonotes-preprocessed/ontonotes.train.english.${seg_len}.`basename ${TOKENIZER}`.jsonlines \
         --is_training 1 \
-        --tokenizer_name bert-base-cased \
+        --tokenizer_name ${TOKENIZER} \
         --seg_len ${seg_len}
 
     for split in dev test
     do
-        python preprocess2.py \
-            --input_file ${STORAGE}/ontonotes-preprocessed/ontonotes.${split}.english.${seg_len}.bert-base-cased.jsonlines \
+        python ./preprocessing/preprocess2.py \
+            --input_file ${STORAGE}/ontonotes-preprocessed/ontonotes.${split}.english.${seg_len}.`basename ${TOKENIZER}`.jsonlines \
             --is_training 0 \
-            --tokenizer_name bert-base-cased \
+            --tokenizer_name ${TOKENIZER} \
             --seg_len ${seg_len}
     done
 done
@@ -83,23 +86,24 @@ cat ${STORAGE}/craft-conll/train/*.continuous_only_conll >> ${STORAGE}/craft-pre
 cat ${STORAGE}/craft-conll/dev/*.continuous_only_conll >> ${STORAGE}/craft-preprocessed/craft.dev.english.gold_conll
 cat ${STORAGE}/craft-conll/test/*.continuous_only_conll >> ${STORAGE}/craft-preprocessed/craft.test.english.gold_conll
 
-TOKENIZER=microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext
+TOKENIZER=bert-base-cased
+# TOKENIZER=microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext
 
 for seg_len in 384 512
 do
-    python preprocess1.py \
+    python ./preprocessing/preprocess1.py \
         --input_dir ${STORAGE}/craft-preprocessed \
         --output_dir ${STORAGE}/craft-preprocessed \
         --dataset_name craft \
         --language english \
         --extension gold_conll \
-        --tokenizer ${TOKENIZER} \
+        --tokenizer_name ${TOKENIZER} \
         --seg_len ${seg_len}
 done
 
 for seg_len in 384 512
 do
-    python preprocess2.py \
+    python ./preprocessing/preprocess2.py \
         --input_file ${STORAGE}/craft-preprocessed/craft.train.english.${seg_len}.`basename ${TOKENIZER}`.jsonlines \
         --is_training 1 \
         --tokenizer_name ${TOKENIZER} \
@@ -107,7 +111,7 @@ do
 
     for split in dev test
     do
-        python preprocess2.py \
+        python ./preprocessing/preprocess2.py \
             --input_file ${STORAGE}/craft-preprocessed/craft.${split}.english.${seg_len}.`basename ${TOKENIZER}`.jsonlines \
             --is_training 0 \
             --tokenizer_name ${TOKENIZER} \
@@ -136,5 +140,50 @@ download_spanbert() {
 
 download_spanbert spanbert_hf_base
 download_spanbert spanbert_hf
+
+
+##################
+# ACL-Coref
+##################
+
+
+mkdir ${STORAGE}/acl-preprocessed
+cat ${ACL}/train/*.auto_conll >> ${STORAGE}/acl-preprocessed/acl.train.english.gold_conll
+cat ${ACL}/dev/*.auto_conll >> ${STORAGE}/acl-preprocessed/acl.dev.english.gold_conll
+cat ${ACL}/test/*.auto_conll >> ${STORAGE}/acl-preprocessed/acl.test.english.gold_conll
+
+TOKENIZER=bert-base-cased
+
+for seg_len in 384 512
+do
+    python ./preprocessing/preprocess1.py \
+        --input_dir ${STORAGE}/acl-preprocessed \
+        --output_dir ${STORAGE}/acl-preprocessed \
+        --dataset_name acl \
+        --language english \
+        --extension gold_conll \
+        --tokenizer_name ${TOKENIZER} \
+        --seg_len ${seg_len}
+done
+
+for seg_len in 384 512
+do
+    python ./preprocessing/preprocess2.py \
+        --input_file ${STORAGE}/acl-preprocessed/acl.train.english.${seg_len}`basename ${TOKENIZER}`.jsonlines \
+        --is_training 1 \
+        --tokenizer_name ${TOKENIZER} \
+        --seg_len ${seg_len}
+
+    for split in dev test
+    do
+        python ./preprocessing/preprocess2.py \
+            --input_file ${STORAGE}/acl-preprocessed/acl.${split}.english.${seg_len}.`basename ${TOKENIZER}`.jsonlines \
+            --is_training 0 \
+            --tokenizer_name ${TOKENIZER} \
+            --seg_len ${seg_len}
+    done
+done
+
+cp ${STORAGE}/acl-preprocessed/*.gold_conll ${STORAGE}/../caches/
 
 

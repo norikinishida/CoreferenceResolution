@@ -56,16 +56,23 @@ def get_document(doc_key, doc_lines, language, seg_len, tokenizer):
     word_idx = -1
 
     # Build up documents
+    original_sentence_begin = 0 # XXX
+    original_sentence_end = -1 # XXX
     for line in doc_lines:
         row = line.split()  # Columns for each token
         if len(row) == 0:
             document_state.sentence_end[-1] = True
+            # XXX
+            if original_sentence_begin <= original_sentence_end:
+                document_state.original_sentence_boundaries.append((original_sentence_begin, original_sentence_end))
+                original_sentence_begin = original_sentence_end + 1
         else:
             assert len(row) >= 12
             word_idx += 1
             word = normalize_word(row[3], language)
             subtokens = tokenizer.tokenize(word)
             document_state.tokens.append(word)
+            original_sentence_end += 1 # XXX
             document_state.token_end += [False] * (len(subtokens) - 1) + [True]
             for idx, subtoken in enumerate(subtokens):
                 document_state.subtokens.append(subtoken)
@@ -85,6 +92,7 @@ class DocumentState(object):
     def __init__(self, key):
         self.doc_key = key
         self.tokens = []
+        self.original_sentence_boundaries = [] # XXX
 
         # Linear list mapped to subtokens without CLS, SEP
         self.subtokens = []
@@ -180,7 +188,8 @@ class DocumentState(object):
         return {
             "doc_key": self.doc_key,
             "tokens": self.tokens,
-            "sentences": self.segments,
+            "original_sentence_boundaries": self.original_sentence_boundaries,
+            "segments": self.segments,
             "speakers": self.speakers,
             "constituents": [],
             "ner": [],
@@ -234,7 +243,7 @@ def split_into_segments(document_state: DocumentState, max_seg_len, constraints1
 
 
 def get_sentence_map(segments, sentence_end):
-    assert len(sentence_end) == sum([len(seg) - 2 for seg in segments])  # of subtokens in all segments
+    assert len(sentence_end) == sum([len(seg) - 2 for seg in segments]) # of subtokens in all segments
     sent_map = []
     sent_idx, subtok_idx = 0, 0
     for segment in segments:
@@ -244,6 +253,7 @@ def get_sentence_map(segments, sentence_end):
             sent_idx += int(sentence_end[subtok_idx])
             subtok_idx += 1
         sent_map.append(sent_idx)  # [SEP]
+        # sent_map.append(sent_idx - 1)  # [SEP]
     return sent_map
 
 

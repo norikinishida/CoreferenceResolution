@@ -2,11 +2,9 @@
 
 (c) 2021 Noriki Nishida
 
-This is an implementation of coreference resolution systems.
+This is an implementation of coreference resolution models:
 
-## Implemented systems and datasets
-
-- Supervised coreference resolution using BERT-based end-to-end model (Joshi et al., 2020)
+- End-to-end coreference resolution model using BERT/SpanBERT ([Joshi et al., 2019](https://aclanthology.org/D19-1588); [Joshi et al., 2020](https://aclanthology.org/2020.tacl-1.5)])
 - Datasets
     - OntoNotes, CoNLL 2012 shared task (Pradhan et al., 2012)
     - CRAFT (Cohen et al., 2017)
@@ -22,9 +20,9 @@ This is an implementation of coreference resolution systems.
 
 ## Configuration
 
-You need to edit the following files according to your environment.
+The following files need to be editted according to your environment.
 
-- config/main.conf
+- config/path.conf
 - run_preprocessing.sh
 
 ## Preprocessing
@@ -40,43 +38,35 @@ The following files will be generated:
 - /path/to/data/craft/
 - /path/to/data/craft-conll/
 - /path/to/data/craft-preprocessed/
-- /path/to/caches/ontonotes.{train,dev,test}.english.{384,512}.\<pretrained-bert-name\>.npy
-- /path/to/caches/craft.{train,dev,test}.english.{384,512}.\<pretrained-bert-name\>.npy
-
-In our code, we used SpanBERT (Joshi et al., 2020) for OntoNotes and PubMedBERT (Gu et al., 2020) for CRAFT.
-Pre-trained BERT models are specified in ./config/main.conf.
+- /path/to/caches/ontonotes.{train,dev,test}.english.{384,512}.bert-base-cased.npy
+- /path/to/caches/craft.{train,dev,test}.english.{384,512}.bert-base-cased.npy
 
 ## Training
 
 ```
-python main.py --gpu 0 --config joshi2020_spanbert_large_ontonotes --actiontype train
+python main.py --gpu 0 --config joshi2020_spanbertlarge_ontonotes --actiontype train
 ```
-
-If you train the system on OntoNotes, change the config name to "joshi2020_pubmedbert_base_craft".
-Details can be found in ./run_main.sh.
 
 The following files will be generated:
 
-- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.training.log
-- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.training.jsonl
-- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.validation.jsonl
-- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.model
+- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.training.log
+- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.training.jsonl
+- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.validation.jsonl
+- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.model
 
 ## Evaluation
 
 ```
-python main.py --gpu 0 --config joshi2020_spanbert_large_ontonotes --prefix <please_specify_prefix> --actiontype evaluate
+python main.py --gpu 0 --config joshi2020_spanbertlarge_ontonotes --prefix <date> --actiontype evaluate
 ```
-
-Details can be found in ./run_main.sh.
 
 The following files will be generated:
 
-- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.evaluation.log
-- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.evaluation.conll
-- /path/to/results/main.joshi2020_spanbert_large_ontonotes/\<date\>.evaluation.jsonl
+- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.evaluation.log
+- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.evaluation.conll
+- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.evaluation.jsonl
 
-## Evaluation on CRAFT using the official docker evaluation script
+### Evaluation on CRAFT using the official docker evaluation script
 
 We ran the following shell script in the ./craft-shared-tasks directory to perform the official craft-shared-task evaluation protocol on a prediction file: e.g, "Jul28_22-24-14.evaluation.conll".
 
@@ -88,7 +78,7 @@ Before running the shell script, you need to edit the paths (e.g., "CRAFT", "PRE
 
 The following files will be generated:
 
-- /path/to/results/main.joshi2020_pubmedbert_large_craft/files-to-evaluate/\<filename\>.conll
-- /path/to/results/main.joshi2020_pubmedbert_large_craft/files-to-evaluate/coref_results.tsv
+- /path/to/results/main.joshi2020_pubmedbertlarge_craft/files-to-evaluate/\<filename\>.conll
+- /path/to/results/main.joshi2020_pubmedbertlarge_craft/files-to-evaluate/coref_results.tsv
 
 

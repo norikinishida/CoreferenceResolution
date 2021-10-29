@@ -13,7 +13,7 @@ import pyprind
 import utils
 
 import systems
-from metrics import CorefEvaluator
+import metrics
 import conll
 
 
@@ -23,12 +23,10 @@ def main(args):
     ##################
 
     device = torch.device(f"cuda:{args.gpu}")
-    # path_hyperparams = args.hyperparams
     config_name = args.config
     prefix = args.prefix
     actiontype = args.actiontype
 
-    # Check
     if prefix is None or prefix == "None":
         prefix = utils.get_current_time()
 
@@ -38,7 +36,6 @@ def main(args):
     # Config
     ##################
 
-    # config = utils.Config(path_hyperparams)
     config = utils.get_hocon_config(config_path="./config/main.conf", config_name=config_name)
     sw = utils.StopWatch()
     sw.start("main")
@@ -47,38 +44,44 @@ def main(args):
     # Path setting
     ##################
 
-    base_dir = "main.%s" % \
-              (# utils.get_basename_without_ext(path_hyperparams),
-               config_name)
+    base_dir = "main.%s" % config_name
 
     utils.mkdir(os.path.join(config["results"], base_dir))
 
+    # Log file
     path_log = None
-
-    # Used in training
     if actiontype == "train":
         path_log = os.path.join(config["results"], base_dir, prefix + ".training.log")
+    elif actiontype == "evaluate":
+        path_log = os.path.join(config["results"], base_dir, prefix + ".evaluation.log")
+
+    # Training loss and etc.
     path_train_jsonl = os.path.join(config["results"], base_dir, prefix + ".training.jsonl")
+
+    # Validation outputs and scores
+    path_valid_pred = os.path.join(config["results"], base_dir, prefix + ".validation.conll")
     path_valid_jsonl = os.path.join(config["results"], base_dir, prefix + ".validation.jsonl")
+
+    # Model snapshot
     path_snapshot = os.path.join(config["results"], base_dir, prefix + ".model")
 
-    # Used in evaluation
-    if actiontype == "evaluate":
-        path_log = os.path.join(config["results"], base_dir, prefix + ".evaluation.log")
-    path_pred = os.path.join(config["results"], base_dir, prefix + ".evaluation.conll")
+    # Evaluation outputs and scores
+    path_test_pred = os.path.join(config["results"], base_dir, prefix + ".evaluation.conll")
+    path_test_json = os.path.join(config["results"], base_dir, prefix + ".evaluation.json")
+
+    # Gold data for validation and evaluation
     if config["dataset"] == "ontonotes":
-        path_gold = os.path.join(config["caches"], "ontonotes.test.english.v4_gold_conll")
+        path_valid_gold = os.path.join(config["caches"], "ontonotes.dev.english.v4_gold_conll")
+        path_test_gold = os.path.join(config["caches"], "ontonotes.test.english.v4_gold_conll")
     elif config["dataset"] == "craft":
-        path_gold = os.path.join(config["caches"], "craft.test.english.gold_conll")
+        path_valid_gold = os.path.join(config["caches"], "craft.dev.english.gold_conll")
+        path_test_gold = os.path.join(config["caches"], "craft.test.english.gold_conll")
     else:
         raise Exception("Never occur.")
-    path_eval = os.path.join(config["results"], base_dir, prefix + ".evaluation.json")
 
     utils.set_logger(path_log)
 
     utils.writelog("device: %s" % device)
-    # utils.writelog("model_name: %s" % model_name)
-    # utils.writelog("path_hyperparams: %s" % path_hyperparams)
     utils.writelog("config_name: %s" % config_name)
     utils.writelog("prefix: %s" % prefix)
     utils.writelog("actiontype: %s" % actiontype)
@@ -87,11 +90,13 @@ def main(args):
 
     utils.writelog("path_log: %s" % path_log)
     utils.writelog("path_train_jsonl: %s" % path_train_jsonl)
+    utils.writelog("path_valid_pred: %s" % path_valid_pred)
+    utils.writelog("path_valid_gold: %s" % path_valid_gold)
     utils.writelog("path_valid_jsonl: %s" % path_valid_jsonl)
     utils.writelog("path_snapshot: %s" % path_snapshot)
-    utils.writelog("path_pred: %s" % path_pred)
-    utils.writelog("path_gold: %s" % path_gold)
-    utils.writelog("path_eval: %s" % path_eval)
+    utils.writelog("path_test_pred: %s" % path_test_pred)
+    utils.writelog("path_test_gold: %s" % path_test_gold)
+    utils.writelog("path_test_json: %s" % path_test_json)
 
     ##################
     # Random seed
@@ -113,9 +118,14 @@ def main(args):
     sw.start("data")
 
     if config["dataset"] == "ontonotes":
-        train_dataset = np.load(os.path.join(config["caches"], f"ontonotes.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
-        dev_dataset = np.load(os.path.join(config["caches"], f"ontonotes.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
-        test_dataset = np.load(os.path.join(config["caches"], f"ontonotes.test.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
+        if config["model_name"] == "joshi2020_discdep01":
+            train_dataset = np.load(os.path.join(config["caches"], f"ontonotes.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.with_spl.npy"), allow_pickle=True)
+            dev_dataset = np.load(os.path.join(config["caches"], f"ontonotes.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.with_spl.npy"), allow_pickle=True)
+            test_dataset = np.load(os.path.join(config["caches"], f"ontonotes.test.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.with_spl.npy"), allow_pickle=True)
+        else:
+            train_dataset = np.load(os.path.join(config["caches"], f"ontonotes.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
+            dev_dataset = np.load(os.path.join(config["caches"], f"ontonotes.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
+            test_dataset = np.load(os.path.join(config["caches"], f"ontonotes.test.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
     elif config["dataset"] == "craft":
         train_dataset = np.load(os.path.join(config["caches"], f"craft.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
         dev_dataset = np.load(os.path.join(config["caches"], f"craft.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
@@ -146,7 +156,7 @@ def main(args):
     system.to_gpu(device=device)
 
     ##################
-    # Training / evaluation
+    # Action
     ##################
 
     if actiontype == "train":
@@ -155,10 +165,10 @@ def main(args):
               train_dataset=train_dataset,
               dev_dataset=dev_dataset,
               path_train_jsonl=path_train_jsonl,
+              path_valid_pred=None,
+              path_valid_gold=None,
               path_valid_jsonl=path_valid_jsonl,
-              path_snapshot=path_snapshot,
-              path_pred=None,
-              path_gold=None)
+              path_snapshot=path_snapshot)
 
     elif actiontype == "evaluate":
         with torch.no_grad():
@@ -167,18 +177,20 @@ def main(args):
                               dataset=test_dataset,
                               step=0,
                               official=True,
-                              path_pred=path_pred,
-                              path_gold=path_gold)
-            utils.write_json(path_eval, scores)
+                              path_pred=path_test_pred,
+                              path_gold=path_test_gold)
+            utils.write_json(path_test_json, scores)
             utils.writelog(utils.pretty_format_dict(scores))
 
     utils.writelog("path_log: %s" % path_log)
     utils.writelog("path_train_jsonl: %s" % path_train_jsonl)
+    utils.writelog("path_valid_pred: %s" % path_valid_pred)
+    utils.writelog("path_valid_gold: %s" % path_valid_gold)
     utils.writelog("path_valid_jsonl: %s" % path_valid_jsonl)
     utils.writelog("path_snapshot: %s" % path_snapshot)
-    utils.writelog("path_pred: %s" % path_pred)
-    utils.writelog("path_gold: %s" % path_gold)
-    utils.writelog("path_eval: %s" % path_eval)
+    utils.writelog("path_test_pred: %s" % path_test_pred)
+    utils.writelog("path_test_gold: %s" % path_test_gold)
+    utils.writelog("path_test_json: %s" % path_test_json)
     utils.writelog("Done.")
     sw.stop("main")
     utils.writelog("Time: %f min." % sw.get_time("main", minute=True))
@@ -189,16 +201,15 @@ def main(args):
 #####################################
 
 
-
 def train(config,
           system,
           train_dataset,
           dev_dataset,
           path_train_jsonl,
+          path_valid_pred,
+          path_valid_gold,
           path_valid_jsonl,
-          path_snapshot,
-          path_pred=None,
-          path_gold=None):
+          path_snapshot):
     """
     Parameters
     ----------
@@ -207,10 +218,10 @@ def train(config,
     train_dataset: numpy.ndarray
     dev_dataset: numpy.ndarray
     path_train_jsonl: str
+    path_valid_pred: str or None
+    path_valid_gold: str or None
     path_valid_jsonl: str
     path_snapshot: str
-    path_pred: str, default None
-    path_gold: str, default None
     """
     torch.autograd.set_detect_anomaly(True)
 
@@ -248,8 +259,8 @@ def train(config,
                           dataset=dev_dataset,
                           step=step,
                           official=False,
-                          path_pred=path_pred,
-                          path_gold=path_gold)
+                          path_pred=path_valid_pred,
+                          path_gold=path_valid_gold)
         scores["step"] = 0
         writer_valid.write(scores)
         utils.writelog(utils.pretty_format_dict(scores))
@@ -328,8 +339,8 @@ def train(config,
                                           dataset=dev_dataset,
                                           step=step,
                                           official=False,
-                                          path_pred=path_pred,
-                                          path_gold=path_gold)
+                                          path_pred=path_valid_pred,
+                                          path_gold=path_valid_gold)
                         scores["step"] = step
                         writer_valid.write(scores)
                         utils.writelog(utils.pretty_format_dict(scores))
@@ -428,7 +439,6 @@ def get_scheduler(optimizers, total_update_steps, warmup_steps):
 # Evaluation
 #####################################
 
-
 def evaluate(config,
              system,
              dataset,
@@ -457,10 +467,9 @@ def evaluate(config,
 
     scores = {}
 
-    evaluator = CorefEvaluator()
+    evaluator = metrics.CorefEvaluator()
     doc_to_prediction = {}
     for data in pyprind.prog_bar(dataset):
-        # data = data[:7] # Strip out gold (cf., old code)
         predicted_clusters, evaluator = \
                 system.predict(data=data, evaluator=evaluator, gold_clusters=data.gold_clusters)
         if not official:
@@ -496,7 +505,7 @@ def evaluate(config,
 
             # Merge redundant mentions
             new_predicted_clusters = []
-            subtokens = utils.flatten_lists(data.sentences)
+            subtokens = utils.flatten_lists(data.segments)
             for cluster in merged_clusters:
                 new_cluster = []
                 history = []
@@ -550,16 +559,16 @@ def evaluate(config,
     scores["Average recall (py)"] = recall * 100.0
     scores["Average F1 (py)"] = f1 * 100.0
 
+    sw.stop()
+    utils.writelog("Evaluated %d documents; Time: %f sec." % (len(dataset), sw.get_time()))
+
     return scores
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--gpu", type=int, default=0)
-    # parser.add_argument("--model", type=str, required=True)
-    # parser.add_argument("--hyperparams", type=str, required=True)
     parser.add_argument("--config", type=str, required=True)
-    # parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--prefix", type=str, default=None)
     parser.add_argument("--actiontype", type=str, required=True)
     args = parser.parse_args()

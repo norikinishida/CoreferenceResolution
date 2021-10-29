@@ -23,10 +23,7 @@ class CorefSystem:
         # Initialize model
         if self.config["model_name"] == "joshi2020":
             self.model = models.Joshi2020(device=device,
-                                            config=config)
-        elif self.config["model_name"] == "corefmodel4":
-            self.model = models.CorefModel4(device=device,
-                                            config=config)
+                                          config=config)
         else:
             raise Exception("Invalid model_name %s" % self.config["model_name"])
 
@@ -74,7 +71,7 @@ class CorefSystem:
         input_ids = data.input_ids
         input_mask = data.input_mask
         speaker_ids = data.speaker_ids
-        sentence_len = data.sentence_len
+        segment_len = data.segment_len
         genre = data.genre
         sentence_map = data.sentence_map
         is_training = data.is_training
@@ -82,13 +79,13 @@ class CorefSystem:
         gold_ends = data.gold_ends
         gold_mention_cluster_map = data.gold_mention_cluster_map
 
-        if len(data.sentences) > self.config["truncation_size"]:
-            input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map, \
+        if len(data.segments) > self.config["truncation_size"]:
+            input_ids, input_mask, speaker_ids, segment_len, genre, sentence_map, \
             is_training, gold_starts, gold_ends, gold_mention_cluster_map \
                 = self.truncate_example(input_ids=input_ids,
                                         input_mask=input_mask,
                                         speaker_ids=speaker_ids,
-                                        sentence_len=sentence_len,
+                                        segment_len=segment_len,
                                         genre=genre,
                                         sentence_map=sentence_map,
                                         is_training=is_training,
@@ -99,7 +96,7 @@ class CorefSystem:
         input_ids = torch.tensor(input_ids, dtype=torch.long, device=self.device)
         input_mask = torch.tensor(input_mask, dtype=torch.long, device=self.device)
         speaker_ids = torch.tensor(speaker_ids, dtype=torch.long, device=self.device)
-        sentence_len = torch.tensor(sentence_len, dtype=torch.long, device=self.device)
+        segment_len = torch.tensor(segment_len, dtype=torch.long, device=self.device)
         genre = torch.tensor(genre, dtype=torch.long, device=self.device)
         sentence_map = torch.tensor(sentence_map, dtype=torch.long, device=self.device)
         is_training = torch.tensor(is_training, dtype=torch.bool, device=self.device)
@@ -114,7 +111,7 @@ class CorefSystem:
         _, loss = self.model.forward(input_ids=input_ids,
                                      input_mask=input_mask,
                                      speaker_ids=speaker_ids,
-                                     sentence_len=sentence_len,
+                                     segment_len=segment_len,
                                      genre=genre,
                                      sentence_map=sentence_map,
                                      is_training=is_training,
@@ -141,14 +138,15 @@ class CorefSystem:
             assert evaluator is None and gold_clusters is None
 
         # Tensorize inputs
-        # data_gpu = [x.to(self.device) for x in data] # old code
         input_ids = torch.tensor(data.input_ids, dtype=torch.long, device=self.device)
         input_mask = torch.tensor(data.input_mask, dtype=torch.long, device=self.device)
         speaker_ids = torch.tensor(data.speaker_ids, dtype=torch.long, device=self.device)
-        sentence_len = torch.tensor(data.sentence_len, dtype=torch.long, device=self.device)
+        segment_len = torch.tensor(data.segment_len, dtype=torch.long, device=self.device)
         genre = torch.tensor(data.genre, dtype=torch.long, device=self.device)
         sentence_map = torch.tensor(data.sentence_map, dtype=torch.long, device=self.device)
         is_training = torch.tensor(data.is_training, dtype=torch.bool, device=self.device)
+
+        # Tensorize targets
         # gold_starts = torch.tensor(data.gold_starts, dtype=torch.long, device=self.device)
         # gold_ends = torch.tensor(data.gold_ends, dtype=torch.long, device=self.device)
         # gold_mention_cluster_map = torch.tensor(data.gold_mention_cluster_map, dtype=torch.long, device=self.device)
@@ -158,16 +156,16 @@ class CorefSystem:
 
         # Forward
         (span_starts, span_ends, antecedent_idx, antecedent_scores), _ \
-                = self.model.forward(input_ids=input_ids,
-                                     input_mask=input_mask,
-                                     speaker_ids=speaker_ids,
-                                     sentence_len=sentence_len,
-                                     genre=genre,
-                                     sentence_map=sentence_map,
-                                     is_training=is_training,
-                                     gold_starts=None,
-                                     gold_ends=None,
-                                     gold_mention_cluster_map=None)
+                    = self.model.forward(input_ids=input_ids,
+                                         input_mask=input_mask,
+                                         speaker_ids=speaker_ids,
+                                         segment_len=segment_len,
+                                         genre=genre,
+                                         sentence_map=sentence_map,
+                                         is_training=is_training,
+                                         gold_starts=None,
+                                         gold_ends=None,
+                                         gold_mention_cluster_map=None)
 
         span_starts = span_starts.tolist()
         span_ends = span_ends.tolist()
@@ -271,30 +269,29 @@ class CorefSystem:
                          input_ids,
                          input_mask,
                          speaker_ids,
-                         sentence_len,
+                         segment_len,
                          genre,
                          sentence_map,
                          is_training,
                          gold_starts,
                          gold_ends,
                          gold_mention_cluster_map,
-                         sentence_offset=None):
+                         segment_offset=None):
         truncation_size = self.config["truncation_size"]
-        num_sentences = input_ids.shape[0]
-        assert num_sentences > truncation_size
+        num_segments = input_ids.shape[0]
+        assert num_segments > truncation_size
 
         # Get offsets
-        sent_offset = sentence_offset
-        if sent_offset is None:
-            sent_offset = random.randint(0, num_sentences - truncation_size) # Random!
-        word_offset = sentence_len[:sent_offset].sum()
-        num_words = sentence_len[sent_offset: sent_offset + truncation_size].sum()
+        if segment_offset is None:
+            segment_offset = random.randint(0, num_segments - truncation_size) # Random!
+        word_offset = segment_len[:segment_offset].sum()
+        num_words = segment_len[segment_offset: segment_offset + truncation_size].sum()
 
         # Extract continuous segments
-        input_ids = input_ids[sent_offset: sent_offset + truncation_size, :]
-        input_mask = input_mask[sent_offset: sent_offset + truncation_size, :]
-        speaker_ids = speaker_ids[sent_offset: sent_offset + truncation_size, :]
-        sentence_len = sentence_len[sent_offset: sent_offset + truncation_size]
+        input_ids = input_ids[segment_offset: segment_offset + truncation_size, :]
+        input_mask = input_mask[segment_offset: segment_offset + truncation_size, :]
+        speaker_ids = speaker_ids[segment_offset: segment_offset + truncation_size, :]
+        segment_len = segment_len[segment_offset: segment_offset + truncation_size]
         sentence_map = sentence_map[word_offset: word_offset + num_words]
 
         # Get gold spans within the window
@@ -303,6 +300,6 @@ class CorefSystem:
         gold_ends = gold_ends[gold_spans] - word_offset # Adjust token indices
         gold_mention_cluster_map = gold_mention_cluster_map[gold_spans]
 
-        return input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map, \
+        return input_ids, input_mask, speaker_ids, segment_len, genre, sentence_map, \
                 is_training, gold_starts, gold_ends, gold_mention_cluster_map
 

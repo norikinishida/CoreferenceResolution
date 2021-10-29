@@ -1,71 +1,11 @@
-from collections import Iterable
-
-# import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.init as init
 from transformers import AutoModel
 
 import utils
 
 import util
-
-
-class Biaffine(nn.Module):
-
-    def __init__(self, input_dim, output_dim=1, bias_x=True, bias_y=True):
-        """
-        Parameters
-        ----------
-        input_dim: int
-        output_dim: int
-        bias_x: bool
-        bias_y: bool
-        """
-        super().__init__()
-
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.bias_x = bias_x
-        self.bias_y = bias_y
-        self.weight = nn.Parameter(torch.Tensor(output_dim, input_dim+bias_x, input_dim+bias_y))
-
-        self.reset_parameters()
-
-    def __repr__(self):
-        s = f"input_dim={self.input_dim}, output_dim={self.output_dim}"
-        if self.bias_x:
-            s += f", bias_x={self.bias_x}"
-        if self.bias_y:
-            s += f", bias_y={self.bias_y}"
-
-        return f"{self.__class__.__name__}({s})"
-
-    def reset_parameters(self):
-        # nn.init.zeros_(self.weight)
-        init.normal_(self.weight, std=0.02)
-
-    def forward(self, x, y):
-        """
-        Parameters
-        ----------
-        x: torch.Tensor(shape=(batch_size, seq_len, input_dim))
-        y: torch.Tensor(shape=(batch_size, seq_len, input_dim))
-
-        Returns
-        -------
-        torch.Tensor(shape=(batch_size, output_dim, seq_len, seq_len))
-            A scoring tensor of shape ``[batch_size, output_dim, seq_len, seq_len]``.
-            If ``output_dim=1``, the dimension for ``output_dim`` will be squeezed automatically.
-        """
-
-        if self.bias_x:
-            x = torch.cat((x, torch.ones_like(x[..., :1])), -1) # (batch_size, seq_len, input_dim+1)
-        if self.bias_y:
-            y = torch.cat((y, torch.ones_like(y[..., :1])), -1) # (batch_size, seq_len, input_dim+1)
-        s = torch.einsum('bxi,oij,byj->boxy', x, self.weight, y) # (batch_size, output_dim, seq_len, seq_len)
-
-        return s
+from . import shared_functions
 
 
 class Joshi2020(nn.Module):
@@ -84,6 +24,9 @@ class Joshi2020(nn.Module):
         self.num_genres = num_genres if num_genres else len(config['genres'])
         self.max_seg_len = config['max_segment_len']
         self.max_span_width = config['max_span_width']
+        self.use_head_attn = config["use_head_attn"]
+        self.use_features = config["use_features"]
+        self.span_distance_type = config["span_distance_type"] # "segment" or "sentence"
 
         ########################
         # Model components
@@ -97,38 +40,47 @@ class Joshi2020(nn.Module):
 
         # For span embedding
         self.span_dim = self.bert_emb_dim * 2
-        self.span_dim += config['feature_dim'] # span width
-        if self.config["use_head_attn"]:
+        if self.use_features:
+            self.span_dim += config['feature_dim'] # span width
+        if self.use_head_attn:
             self.span_dim += self.bert_emb_dim
-        self.embed_span_width = self.make_embedding(dict_size=self.max_span_width, dim=config["feature_dim"])
-        self.ffnn_mention_attn = self.make_ffnn(feat_dim=self.bert_emb_dim, hidden_dims=0, output_dim=1) if config["use_head_attn"] else None
+
+        if self.use_features:
+            self.embed_span_width = shared_functions.make_embedding(dict_size=self.max_span_width, dim=config["feature_dim"])
+        if self.use_head_attn:
+            self.ffnn_mention_attn = shared_functions.make_ffnn(feat_dim=self.bert_emb_dim, hidden_dims=0, output_dim=1, dropout=self.dropout)
 
         # For mention scoring
-        self.ffnn_span_emb_score = self.make_ffnn(feat_dim=self.span_dim, hidden_dims=[config['ffnn_dim']] * config['ffnn_depth'], output_dim=1)
+        self.ffnn_span_emb_score = shared_functions.make_ffnn(feat_dim=self.span_dim, hidden_dims=[config['ffnn_dim']] * config['ffnn_depth'], output_dim=1, dropout=self.dropout)
 
         # For mention scoring (prior)
-        self.embed_span_width_prior = self.make_embedding(dict_size=self.max_span_width, dim=config["feature_dim"])
-        self.ffnn_span_width_score = self.make_ffnn(feat_dim=config['feature_dim'], hidden_dims=[config['ffnn_dim']] * config['ffnn_depth'], output_dim=1)
+        if self.use_features:
+            self.embed_span_width_prior = shared_functions.make_embedding(dict_size=self.max_span_width, dim=config["feature_dim"])
+            self.ffnn_span_width_score = shared_functions.make_ffnn(feat_dim=config['feature_dim'], hidden_dims=[config['ffnn_dim']] * config['ffnn_depth'], output_dim=1, dropout=self.dropout)
 
         # For coreference scoring (coarse-grained)
         # self.coarse_bilinear = self.make_ffnn(feat_dim=self.span_dim, hidden_dims=0, output_dim=self.span_dim)
-        self.biaffine_coref_score = Biaffine(input_dim=self.span_dim, output_dim=1, bias_x=False, bias_y=True)
+        self.biaffine_coref_score = shared_functions.Biaffine(input_dim=self.span_dim, output_dim=1, bias_x=False, bias_y=True)
 
         # For coreference scoring (prior)
-        self.embed_antecedent_distance_prior = self.make_embedding(dict_size=10, dim=config["feature_dim"])
-        self.ffnn_antecedent_distance_score = self.make_ffnn(feat_dim=config['feature_dim'], hidden_dims=0, output_dim=1)
+        if self.use_features:
+            self.embed_antecedent_distance_prior = shared_functions.make_embedding(dict_size=10, dim=config["feature_dim"])
+            self.ffnn_antecedent_distance_score = shared_functions.make_ffnn(feat_dim=config['feature_dim'], hidden_dims=0, output_dim=1, dropout=self.dropout)
 
         # For coreference scoring (fine-grained)
-        self.pair_dim = self.span_dim * 3
-        self.pair_dim += config['feature_dim'] # same-speaker indicator
-        self.pair_dim += config['feature_dim'] # genre
-        self.pair_dim += config['feature_dim'] # segment distance
-        self.pair_dim += config['feature_dim'] # top antecedent distance
-        self.embed_same_speaker = self.make_embedding(dict_size=2, dim=config["feature_dim"])
-        self.embed_genre = self.make_embedding(dict_size=self.num_genres, dim=config["feature_dim"])
-        self.embed_segment_distance = self.make_embedding(dict_size=config['max_training_sentences'], dim=config["feature_dim"])
-        self.embed_top_antecedent_distance = self.make_embedding(dict_size=10, dim=config["feature_dim"])
-        self.ffnn_coref_score = self.make_ffnn(feat_dim=self.pair_dim, hidden_dims=[config['ffnn_dim']] * config['ffnn_depth'], output_dim=1)
+        self.pair_dim = self.span_dim * 3 # mention, antecedent, product
+        if self.use_features:
+            self.pair_dim += config['feature_dim'] # same-speaker indicator
+            self.pair_dim += config['feature_dim'] # genre
+            self.pair_dim += config['feature_dim'] # segment distance
+            self.pair_dim += config['feature_dim'] # top antecedent distance
+
+            self.embed_same_speaker = shared_functions.make_embedding(dict_size=2, dim=config["feature_dim"])
+            self.embed_genre = shared_functions.make_embedding(dict_size=self.num_genres, dim=config["feature_dim"])
+            self.embed_segment_distance = shared_functions.make_embedding(dict_size=config['max_training_segments'], dim=config["feature_dim"])
+            self.embed_top_antecedent_distance = shared_functions.make_embedding(dict_size=10, dim=config["feature_dim"])
+
+        self.ffnn_coref_score = shared_functions.make_ffnn(feat_dim=self.pair_dim, hidden_dims=[config['ffnn_dim']] * config['ffnn_depth'], output_dim=1, dropout=self.dropout)
 
         ########################
         # Others
@@ -136,34 +88,6 @@ class Joshi2020(nn.Module):
 
         self.update_steps = 0  # Internal use for debug
         self.debug = True
-
-    ########################
-    # Component makers
-    ########################
-
-    def make_embedding(self, dict_size, dim, std=0.02):
-        emb = nn.Embedding(dict_size, dim)
-        init.normal_(emb.weight, std=std)
-        return emb
-
-    def make_linear(self, in_features, out_features, bias=True, std=0.02):
-        linear = nn.Linear(in_features, out_features, bias)
-        init.normal_(linear.weight, std=std)
-        if bias:
-            init.zeros_(linear.bias)
-        return linear
-
-    def make_ffnn(self, feat_dim, hidden_dims, output_dim):
-        if hidden_dims is None or hidden_dims == 0 or hidden_dims == [] or hidden_dims == [0]:
-            return self.make_linear(feat_dim, output_dim)
-
-        if not isinstance(hidden_dims, Iterable):
-            hidden_dims = [hidden_dims]
-        ffnn = [self.make_linear(feat_dim, hidden_dims[0]), nn.ReLU(), self.dropout]
-        for i in range(1, len(hidden_dims)):
-            ffnn += [self.make_linear(hidden_dims[i-1], hidden_dims[i]), nn.ReLU(), self.dropout]
-        ffnn.append(self.make_linear(hidden_dims[-1], output_dim))
-        return nn.Sequential(*ffnn)
 
     ################
     # For optimization
@@ -188,7 +112,7 @@ class Joshi2020(nn.Module):
                 input_ids,
                 input_mask,
                 speaker_ids,
-                sentence_len, # never used
+                segment_len, # never used
                 genre,
                 sentence_map,
                 is_training,  # never used
@@ -201,7 +125,7 @@ class Joshi2020(nn.Module):
         input_ids: torch.tensor(shape=(n_segs, max_seg_len))
         input_mask: torch.Tensor(shape=(n_segs, max_seg_len))
         speaker_ids: torch.Tensor(shape=(n_segs, max_seg_len))
-        sentence_len: torch.Tensor(shape=(n_segs,))
+        segment_len: torch.Tensor(shape=(n_segs,))
         genre: torch.Tensor of long
         sentence_map: torch.Tensor(shape=(n_tokens,))
         is_training: torch.Tensor of bool
@@ -221,7 +145,7 @@ class Joshi2020(nn.Module):
             do_loss = True
 
         ###################################
-        # <1> Token embeddings
+        # <1> Embed tokens using BERT
         ###################################
 
         token_embs, _ = self.bert(input_ids, attention_mask=input_mask) # (n_segs, max_seg_len, tok_dim)
@@ -231,7 +155,7 @@ class Joshi2020(nn.Module):
         n_tokens = token_embs.shape[0]
 
         ###################################
-        # <2> Candidate spans
+        # <2> Generate candidate spans with simple constraints
         ###################################
         """
         cand_span_start_token_indices =
@@ -251,15 +175,16 @@ class Joshi2020(nn.Module):
 
         cand_span_start_token_indices = torch.unsqueeze(torch.arange(0, n_tokens, device=self.device), 1).repeat(1, self.max_span_width) # (n_tokens, max_span_width)
         cand_span_end_token_indices = cand_span_start_token_indices + torch.arange(0, self.max_span_width, device=self.device) # (n_tokens, max_span_width)
+
         # sentence index of each token
         sentence_indices = sentence_map  # (n_tokens,); sentence index of i-th token
         clamped_cand_span_end_token_indices = torch.min(cand_span_end_token_indices, torch.tensor(n_tokens - 1, device=self.device))
         cand_span_start_sent_indices = sentence_indices[cand_span_start_token_indices] # (n_tokens, max_span_width)
         cand_span_end_sent_indices = sentence_indices[clamped_cand_span_end_token_indices] # (n_tokens, max_span_width)
+
         # condition: within document boundary & within same sentence
         cand_span_mask = cand_span_end_token_indices < n_tokens
         cand_span_mask = cand_span_mask & (cand_span_start_sent_indices == cand_span_end_sent_indices)
-        # apply
         cand_span_start_token_indices = cand_span_start_token_indices[cand_span_mask]  # (n_cand_spans,)
         cand_span_end_token_indices = cand_span_end_token_indices[cand_span_mask]  # (n_cand_spans,)
 
@@ -275,7 +200,7 @@ class Joshi2020(nn.Module):
             cand_span_cluster_ids = torch.squeeze(cand_span_cluster_ids.to(torch.long), 0) # (n_cand_spans,); non-gold span has cluster id 0
 
         ###################################
-        # <3> Span embeddings
+        # <3> Compute span vectors for each candidate span
         ###################################
 
         # Get span endpoints embeddings
@@ -284,10 +209,11 @@ class Joshi2020(nn.Module):
         cand_span_embs_list = [cand_span_start_embs, cand_span_end_embs]
 
         # Get span-width embedding
-        cand_span_width_indices = cand_span_end_token_indices - cand_span_start_token_indices # (n_cand_spans,)
-        cand_span_width_embs = self.embed_span_width(cand_span_width_indices) # (n_cand_spans, feat_dim)
-        cand_span_width_embs = self.dropout(cand_span_width_embs)
-        cand_span_embs_list.append(cand_span_width_embs)
+        if self.use_features:
+            cand_span_width_indices = cand_span_end_token_indices - cand_span_start_token_indices # (n_cand_spans,)
+            cand_span_width_embs = self.embed_span_width(cand_span_width_indices) # (n_cand_spans, feat_dim)
+            cand_span_width_embs = self.dropout(cand_span_width_embs)
+            cand_span_embs_list.append(cand_span_width_embs)
 
         # Get span attention embedding
         if self.config["use_head_attn"]:
@@ -296,40 +222,42 @@ class Joshi2020(nn.Module):
             doc_range_1 = cand_span_start_token_indices.unsqueeze(1) <= doc_range # (n_cand_spans, n_tokens)
             doc_range_2 = doc_range <= cand_span_end_token_indices.unsqueeze(1) # (n_cand_spans, n_tokens)
             cand_span_token_mask = doc_range_1 & doc_range_2 # (n_cand_spans, n_tokens)
-            cand_span_token_attns = torch.log(cand_span_token_mask.float()) + torch.unsqueeze(token_attns, 0) # (n_cand_spans, n_tokens); masking for spans (w/ broadcasting)
-            cand_span_token_attns = nn.functional.softmax(cand_span_token_attns, dim=1) # (n_cand_spans, n_tokens)
-            cand_span_ha_embs = torch.matmul(cand_span_token_attns, token_embs) # (n_cand_spans, tok_dim)
+            if do_loss:
+                cand_span_token_attns = torch.log(cand_span_token_mask.float()) + torch.unsqueeze(token_attns, 0) # (n_cand_spans, n_tokens); masking for spans (w/ broadcasting)
+                cand_span_token_attns = nn.functional.softmax(cand_span_token_attns, dim=1) # (n_cand_spans, n_tokens)
+                cand_span_ha_embs = torch.matmul(cand_span_token_attns, token_embs) # (n_cand_spans, tok_dim)
+            else:
+                cand_span_ha_embs_list = []
+                for cand_i in range(cand_span_token_mask.shape[0]):
+                    cropped_span_attns = token_attns[cand_span_token_mask[cand_i]] # (span_len,)
+                    cropped_span_attns = nn.functional.softmax(cropped_span_attns) # (span_len,)
+                    cropped_token_embs = token_embs[cand_span_token_mask[cand_i]] # (span_len, tok_dim)
+                    cropped_span_ha_embs = torch.matmul(cropped_span_attns.unsqueeze(0), cropped_token_embs) # (1, tok_dim)
+                    cand_span_ha_embs_list.append(cropped_span_ha_embs)
+                cand_span_ha_embs = torch.cat(cand_span_ha_embs_list, axis=0) # (n_cand_spans, tok_dim)
+
             cand_span_embs_list.append(cand_span_ha_embs)
 
-        # concatenation
+        # Concatenate
         cand_span_embs = torch.cat(cand_span_embs_list, dim=1)  # (n_cand_spans, span_dim)
 
         ###################################
-        # <4> Mention scores
+        # <4> Compute mention scores for each candidate span
         ###################################
 
         # Get mention scores
         cand_span_mention_scores = torch.squeeze(self.ffnn_span_emb_score(cand_span_embs), 1) # (n_cand_spans,)
 
-        # + Prior
-        width_scores = torch.squeeze(self.ffnn_span_width_score(self.embed_span_width_prior.weight), 1) # (max_span_width,)
-        cand_span_width_scores = width_scores[cand_span_width_indices] # (n_cand_spans,)
-        cand_span_mention_scores = cand_span_mention_scores + cand_span_width_scores
+        # + Prior (span width)
+        if self.use_features:
+            width_scores = torch.squeeze(self.ffnn_span_width_score(self.embed_span_width_prior.weight), 1) # (max_span_width,)
+            cand_span_width_scores = width_scores[cand_span_width_indices] # (n_cand_spans,)
+            cand_span_mention_scores = cand_span_mention_scores + cand_span_width_scores
 
         ###################################
-        # <5> Top spans
+        # <5> Prune the candidate spans based on the mention scores
         ###################################
 
-        # TODO
-        #
-        # if do_loss:
-        #     # We force the model to include the gold mentions in the top-ranked candidate spans during training
-        #     cand_span_mention_scores_editted = torch.clone(cand_span_mention_scores)
-        #     cand_span_mention_scores_editted[cand_span_cluster_ids > 0] = 100000.0 # Set large value to the gold mentions for trianing
-        #     cand_span_indices_sorted_by_score = torch.argsort(cand_span_mention_scores_editted, descending=True).tolist() # (n_cand_spans,); candidate-span index
-        # else:
-        #     cand_span_indices_sorted_by_score = torch.argsort(cand_span_mention_scores, descending=True).tolist() # (n_cand_spans,); candidate-span index
-        #
         cand_span_indices_sorted_by_score = torch.argsort(cand_span_mention_scores, descending=True).tolist() # (n_cand_spans,); candidate-span index
 
         n_top_spans = int(min(self.config['max_num_extracted_spans'], self.config['top_span_ratio'] * n_tokens))
@@ -345,11 +273,12 @@ class Joshi2020(nn.Module):
         top_span_start_token_indices = cand_span_start_token_indices[top_span_indices] # (n_top_spans,); token index
         top_span_end_token_indices = cand_span_end_token_indices[top_span_indices] # (n_top_spans,); token index
         top_span_embs = cand_span_embs[top_span_indices] # (n_top_spans, span_dim)
-        top_span_cluster_ids = cand_span_cluster_ids[top_span_indices] if do_loss else None # (n_top_spans,); cluster ids
+        if do_loss:
+            top_span_cluster_ids = cand_span_cluster_ids[top_span_indices] # (n_top_spans,); cluster ids
         top_span_mention_scores = cand_span_mention_scores[top_span_indices] # (n_top_spans,)
 
         ###################################
-        # <6> Coarse-grained coreference scores
+        # <6> Compute coarse-grained coreference scores for each pair of top-ranked spans
         ###################################
         """
         antecendet_offsets =
@@ -382,24 +311,25 @@ class Joshi2020(nn.Module):
         #
         pairwise_coref_scores = pairwise_mention_scores + pairwise_coref_scores # (n_top_spans, n_top_spans)
 
-        # Masking
+        # Apply mask to invalid antecedents
         top_span_range = torch.arange(0, n_top_spans, device=self.device) # (n_top_spans,); top-span index
         antecedent_offsets = torch.unsqueeze(top_span_range, 1) - torch.unsqueeze(top_span_range, 0) # (n_top_spans, n_top_spans)
         antecedent_mask = (antecedent_offsets >= 1) # (n_top_spans, n_top_spans); only preceding spans are active
         antecedent_mask = antecedent_mask.to(torch.float)
         pairwise_coref_scores = pairwise_coref_scores + torch.log(antecedent_mask) # (n_top_spans, n_top_spans)
 
-        # + Prior
-        distance_scores = torch.squeeze(self.ffnn_antecedent_distance_score(self.dropout(self.embed_antecedent_distance_prior.weight)), 1)
-        bucketed_distances = util.bucket_distance(antecedent_offsets)
-        antecedent_distance_scores = distance_scores[bucketed_distances]
-        pairwise_coref_scores = pairwise_coref_scores + antecedent_distance_scores
+        # + Prior (antecedent distance)
+        if self.use_features:
+            distance_scores = torch.squeeze(self.ffnn_antecedent_distance_score(self.dropout(self.embed_antecedent_distance_prior.weight)), 1)
+            bucketed_distances = util.bucket_distance(antecedent_offsets)
+            antecedent_distance_scores = distance_scores[bucketed_distances]
+            pairwise_coref_scores = pairwise_coref_scores + antecedent_distance_scores
 
         ###################################
-        # <7> Antecedents (top-ranked mentions)
+        # <7> Select top-K-ranked antecedents for each top-ranked span
         ###################################
 
-        #NOTE: antecedentsはcoarse-grained coreference scoresに基づいて選択される
+        # NOTE: antecedentsはcoarse-grained coreference scoresに基づいて選択される
 
         n_ant_spans = min(n_top_spans, self.config['max_top_antecedents'])
         top_antecedent_scores_coarse, top_antecedent_indices = torch.topk(pairwise_coref_scores, k=n_ant_spans) # (n_top_spans, n_ant_spans), (n_top_spans, n_ant_spans); j-th best top-span index for i-th top-span
@@ -407,7 +337,7 @@ class Joshi2020(nn.Module):
         top_antecedent_mask = util.batch_select(antecedent_mask, top_antecedent_indices, device=self.device)  # (n_top_spans, n_ant_spans)
 
         ###################################
-        # <8> Fine-grained coreference scores
+        # <8> Compute fine-grained coreference scores for the top-ranked coreference pairs
         ###################################
 
         # NOTE: lossはfine-grained coreference scoresに基づいて計算される
@@ -418,44 +348,58 @@ class Joshi2020(nn.Module):
             # Get rich pair embeddings
             ###################################
 
-            # Embeddings about whether two spans belong to the same speaker or not
-            top_span_speaker_ids = speaker_ids[top_span_start_token_indices] # (n_top_spans,); speaker id of i-th span
-            top_antecedent_speaker_ids = top_span_speaker_ids[top_antecedent_indices] # (n_top_spans, n_ant_spans); speaker id of j-th antecedent of i-th span
-            same_speakers = torch.unsqueeze(top_span_speaker_ids, 1) == top_antecedent_speaker_ids # (n_top_spans, n_ant_spans)
-            same_speakers = same_speakers.to(torch.long)
-            same_speaker_embs = self.embed_same_speaker(same_speakers) # (n_top_spans, n_ant_spans, feat_dim)
+            if self.use_features:
+                # Embed the same-speaker indicators
+                top_span_speaker_ids = speaker_ids[top_span_start_token_indices] # (n_top_spans,); speaker id of i-th span
+                top_antecedent_speaker_ids = top_span_speaker_ids[top_antecedent_indices] # (n_top_spans, n_ant_spans); speaker id of j-th antecedent of i-th span
+                same_speakers = torch.unsqueeze(top_span_speaker_ids, 1) == top_antecedent_speaker_ids # (n_top_spans, n_ant_spans)
+                same_speakers = same_speakers.to(torch.long)
+                same_speaker_embs = self.embed_same_speaker(same_speakers) # (n_top_spans, n_ant_spans, feat_dim)
 
-            # Embedding of the document's genre
-            genre_embs = self.embed_genre(genre) # (feat_dim,)
-            genre_embs = torch.unsqueeze(torch.unsqueeze(genre_embs, 0), 0).repeat(n_top_spans, n_ant_spans, 1) # (n_top_spans, n_ant_spans, feat_dim)
+                # Embed the document genre
+                genre_embs = self.embed_genre(genre) # (feat_dim,)
+                genre_embs = torch.unsqueeze(torch.unsqueeze(genre_embs, 0), 0).repeat(n_top_spans, n_ant_spans, 1) # (n_top_spans, n_ant_spans, feat_dim)
 
-            # Embeddings of segment distance between spans
-            n_segs, max_seg_len = input_ids.shape[0], input_ids.shape[1]
-            token_seg_ids = torch.arange(0, n_segs, device=self.device).unsqueeze(1).repeat(1, max_seg_len) # (n_segs, max_seg_len); segment index of (i,j)-th token
-            token_seg_ids = token_seg_ids[input_mask] # (seg_len,); segment index of i-th token
-            top_span_seg_ids = token_seg_ids[top_span_start_token_indices] # (n_top_spans,); segment index of i-th span
-            top_antecedent_seg_ids = token_seg_ids[top_span_start_token_indices[top_antecedent_indices]] # (n_top_spans, n_ant_spans); segment index of j-th antecedent of i-th span
-            top_antecedent_seg_distances = torch.unsqueeze(top_span_seg_ids, 1) - top_antecedent_seg_ids # (n_top_spans, n_ant_spans); segment-level distance between i-th span and j-th span
-            top_antecedent_seg_distances = torch.clamp(top_antecedent_seg_distances, 0, self.config['max_training_sentences'] - 1) # (n_top_spans, n_ant_spans)
-            seg_distance_embs = self.embed_segment_distance(top_antecedent_seg_distances) # (n_top_spans, n_ant_spans, feat_dim)
+                if self.span_distance_type == "segment":
+                    # Embed segment-level distance between spans
+                    n_segs, max_seg_len = input_ids.shape[0], input_ids.shape[1]
+                    token_seg_indices = torch.arange(0, n_segs, device=self.device).unsqueeze(1).repeat(1, max_seg_len) # (n_segs, max_seg_len); segment index of (i,j)-th token
+                    token_seg_indices = token_seg_indices[input_mask] # (n_tokens,); segment index of i-th token
+                    top_span_seg_indices = token_seg_indices[top_span_start_token_indices] # (n_top_spans,); segment index of i-th span
+                    top_antecedent_seg_indices = token_seg_indices[top_span_start_token_indices[top_antecedent_indices]] # (n_top_spans, n_ant_spans); segment index of j-th antecedent of i-th span
+                    top_antecedent_seg_distances = torch.unsqueeze(top_span_seg_indices, 1) - top_antecedent_seg_indices # (n_top_spans, n_ant_spans); segment-level distance between i-th span and j-th span
+                    top_antecedent_seg_distances = torch.clamp(top_antecedent_seg_distances, 0, self.config['max_training_segments'] - 1) # (n_top_spans, n_ant_spans)
+                    seg_distance_embs = self.embed_segment_distance(top_antecedent_seg_distances) # (n_top_spans, n_ant_spans, feat_dim)
+                elif self.span_distance_type == "sentence":
+                    # Embed sentence-level distance between spans
+                    top_span_sent_indices = sentence_indices[top_span_start_token_indices] # (n_top_spans,); sentence id of i-th span
+                    top_antecedent_sent_indices = sentence_indices[top_span_start_token_indices[top_antecedent_indices]] # (n_top_spans, n_ant_spans); sentence index of j-th antecedent of i-th span
+                    top_antecedent_seg_distances = torch.unsqueeze(top_span_sent_indices, 1) - top_antecedent_sent_indices # (n_top_spans, n_ant_spans); sentence-level distance between i-th span and j-th span
+                    top_antecedent_seg_distances = torch.clamp(top_antecedent_seg_distances, 0, self.config['max_training_segments'] -1 ) # (n_top_spans, n_ant_spans)
+                    seg_distance_embs = self.embed_segment_distance(top_antecedent_seg_distances) # (n_top_spans, n_atn_spans, feat_dim)
+                else:
+                    raise Exception("Invalid span_distance_type: %s" % self.span_distance_type)
 
-            # Embeddings of index-level distance between spans
-            # Is index-level distance meaningful???
-            top_antecedent_distances = util.bucket_distance(top_antecedent_offsets) # (n_top_spans, n_ant_spans); span-index-level distance
-            top_antecedent_distance_embs = self.embed_top_antecedent_distance(top_antecedent_distances) # (n_top_spans, n_ant_spans, feat_dim)
+                # Embed index-level distance between spans
+                # Is index-level distance meaningful???
+                top_antecedent_distances = util.bucket_distance(top_antecedent_offsets) # (n_top_spans, n_ant_spans); span-index-level distance
+                top_antecedent_distance_embs = self.embed_top_antecedent_distance(top_antecedent_distances) # (n_top_spans, n_ant_spans, feat_dim)
 
-            # Concat
-            feature_list = [same_speaker_embs, genre_embs, seg_distance_embs, top_antecedent_distance_embs]
-            feature_embs = torch.cat(feature_list, dim=2) # (n_top_spans, n_ant_spans, 4 * feat_dim)
-            feature_embs = self.dropout(feature_embs) # (n_top_spans, n_ant_spans, 4 * feat_dim)
+                # Concatenate
+                feature_list = [same_speaker_embs, genre_embs, seg_distance_embs, top_antecedent_distance_embs]
+                feature_embs = torch.cat(feature_list, dim=2) # (n_top_spans, n_ant_spans, 4 * feat_dim)
+                feature_embs = self.dropout(feature_embs) # (n_top_spans, n_ant_spans, 4 * feat_dim)
 
-            # top spans (lhs) x antecedent spans (rhs) x their product
+            # top-ranked spans (lhs) x top-ranked antecedents (rhs) x their product
             lhs_embs = torch.unsqueeze(top_span_embs, 1).repeat(1, n_ant_spans, 1) # (n_top_spans, n_ant_spans, span_dim)
             rhs_embs = top_span_embs[top_antecedent_indices]  # (n_top_spans, n_ant_spans, span_dim)
             product_embs = lhs_embs * rhs_embs # (n_top_spans, n_ant_spans, span_dim)
 
             # Concat
-            pair_embs = torch.cat([lhs_embs, rhs_embs, product_embs, feature_embs], 2) # (n_top_spans, n_ant_spans, 3*span_dim + 4*feat_dim)
+            if self.use_features:
+                pair_embs = torch.cat([lhs_embs, rhs_embs, product_embs, feature_embs], 2) # (n_top_spans, n_ant_spans, 3*span_dim + 4*feat_dim)
+            else:
+                pair_embs = torch.cat([lhs_embs, rhs_embs, product_embs], 2) # (n_top_spans, n_ant_spans, 3*span_dim)
 
             ###################################
             # Get fine-grained coreference scores
@@ -467,6 +411,7 @@ class Joshi2020(nn.Module):
         else:
             top_antecedent_scores = top_antecedent_scores_coarse # (n_top_spans, n_ant_spans)
 
+        # Append a constrant 0 vector to the first column
         top_antecedent_scores = torch.cat([torch.zeros(n_top_spans, 1, device=self.device), top_antecedent_scores], dim=1) # (n_top_spans, 1+n_ant_spans)
 
         if not do_loss:
@@ -476,7 +421,7 @@ class Joshi2020(nn.Module):
                     top_antecedent_scores], None
 
         ###################################
-        # <9> Loss
+        # <9> Compute losses
         ###################################
 
         # A integer matrix, where (i,j)-th element is the cluster id of i-th span and j-th antecedent
@@ -600,8 +545,4 @@ class Joshi2020(nn.Module):
         if len(selected_cand_span_indices) < n_top_spans:  # Padding
             selected_cand_span_indices += ([selected_cand_span_indices[0]] * (n_top_spans - len(selected_cand_span_indices)))
         return selected_cand_span_indices
-
-
-
-
 

@@ -10,7 +10,7 @@ import util
 
 
 def main(args):
-    config = utils.get_hocon_config(config_path="./config/main.conf", config_name="base_hyperparams")
+    config = utils.get_hocon_config(config_path="./config/main.conf", config_name="base")
 
     input_file = args.input_file
     if args.is_training == 0:
@@ -43,15 +43,15 @@ def main(args):
             speakers = json_data["speakers"]
             speaker_dict = get_speaker_dict(util.flatten(speakers), config["max_num_speakers"])
 
-            # Sentences/segments
-            sentences = json_data["sentences"] # Segments
+            # Segments
+            segments = json_data["segments"]
             sentence_map = json_data["sentence_map"]
-            num_words = sum([len(s) for s in sentences])
-            sentence_len = np.array([len(s) for s in sentences])
+            num_words = sum([len(s) for s in segments])
+            segment_len = np.array([len(s) for s in segments])
 
             # BERT input IDs/mask, speaker IDs
             input_ids, input_mask, speaker_ids = [], [], []
-            for idx, (sent_tokens, sent_speakers) in enumerate(zip(sentences, speakers)):
+            for idx, (sent_tokens, sent_speakers) in enumerate(zip(segments, speakers)):
                 sent_input_ids = tokenizer.convert_tokens_to_ids(sent_tokens)
                 sent_input_mask = [1] * len(sent_input_ids)
                 sent_speaker_ids = [speaker_dict[speaker] for speaker in sent_speakers]
@@ -80,6 +80,7 @@ def main(args):
 
             # Others
             tokens = json_data["tokens"]
+            original_sentence_boundaries = json_data["original_sentence_boundaries"] # XXX
             gold_clusters = json_data["clusters"]
             subtoken_map = json_data.get("subtoken_map", None)
 
@@ -87,7 +88,8 @@ def main(args):
             kargs = {
                 "doc_key": doc_key,
                 "tokens": tokens,
-                "sentences": sentences,
+                "original_sentence_boundaries": original_sentence_boundaries, # XXX
+                "segments": segments,
                 "sentence_map": sentence_map,
                 "speakers": speakers,
                 "gold_clusters": gold_clusters,
@@ -96,9 +98,8 @@ def main(args):
                 "input_ids": input_ids,
                 "input_mask": input_mask,
                 "speaker_ids": speaker_ids,
-                "sentence_len": sentence_len,
+                "segment_len": segment_len,
                 "genre": genre,
-                "sentence_map": sentence_map,
                 "is_training": is_training,
                 "gold_starts": gold_starts,
                 "gold_ends": gold_ends,
