@@ -4,7 +4,7 @@
 
 This is an implementation of coreference resolution models:
 
-- End-to-end coreference resolution model using BERT/SpanBERT ([Joshi et al., 2019](https://aclanthology.org/D19-1588); [Joshi et al., 2020](https://aclanthology.org/2020.tacl-1.5)])
+- End-to-end coreference resolution model using BERT/SpanBERT ([Joshi et al., 2019](https://aclanthology.org/D19-1588); [Joshi et al., 2020](https://aclanthology.org/2020.tacl-1.5))
 
 ## Requirements
 
@@ -61,7 +61,7 @@ The following files will be generated:
 
 - /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.evaluation.log
 - /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.evaluation.conll
-- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.evaluation.jsonl
+- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.evaluation.json
 
 ### Evaluation on CRAFT using the official docker evaluation script
 
