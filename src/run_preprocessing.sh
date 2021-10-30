@@ -12,7 +12,6 @@ ACL=/home/nishida/storage/dataset/ACL-Coref/Coreference_annotated_corpus/head_au
 
 dlx() {
     wget -P ${STORAGE}/$3 $1/$2
-import re
     tar -zxvf ${STORAGE}/$3/$2 -C ${STORAGE}/$3
     rm ${STORAGE}/$3/$2
 }
