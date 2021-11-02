@@ -1,10 +1,2 @@
 *.pyc
-tmp*
-j0*.sh*
-j_*.sh*
-job*.sh*
-debug*
-hoge*
-fuga*
-raiden*
-_backup*
+
