@@ -24,21 +24,18 @@ The following files need to be editted according to your environment.
 
 ## Preprocessing
 
-```
-./run_preprocessing.sh
-```
+Please see ./run_preprocessing.sh for details.
 
-The following files will be generated:
+Preprocessed datasets (\*.npy) and gold annotations (\*.\*_conll) will be finally generated as follows:
 
-- /path/to/data/ontonotes/
-- /path/to/data/ontonotes-preprocessed/
-- /path/to/data/craft/
-- /path/to/data/craft-conll/
-- /path/to/data/craft-preprocessed/
 - /path/to/caches/ontonotes.{train,dev,test}.english.{384,512}.bert-base-cased.npy
+- /path/to/caches/ontonotes.{train,dev,test}.english.v4_gold_conll
 - /path/to/caches/craft.{train,dev,test}.english.{384,512}.bert-base-cased.npy
+- /path/to/caches/craft.{train,dev,test}.english.{gold_conll,gold_original_conll}
 
 ## Training
+
+The following command is an example to train an end-to-end CR model (Joshi+, 2020) using SpanBERT (large) on OntoNotes:
 
 ```
 python main.py --gpu 0 --config joshi2020_spanbertlarge_ontonotes --actiontype train
@@ -52,6 +49,8 @@ The following files will be generated:
 - /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.model
 
 ## Evaluation
+
+The following command is an example to evaluate the end-to-end CR model on OntoNotes:
 
 ```
 python main.py --gpu 0 --config joshi2020_spanbertlarge_ontonotes --prefix <date> --actiontype evaluate
