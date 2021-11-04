@@ -2,7 +2,7 @@
 
 (c) 2021 Noriki Nishida
 
-This is an implementation of coreference resolution models:
+This repository is an implementation of coreference resolution models:
 
 - End-to-end coreference resolution model using BERT/SpanBERT ([Joshi et al., 2019](https://aclanthology.org/D19-1588); [Joshi et al., 2020](https://aclanthology.org/2020.tacl-1.5))
 
