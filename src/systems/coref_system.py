@@ -155,7 +155,7 @@ class CorefSystem:
         self.model.eval()
 
         # Forward
-        (span_starts, span_ends, antecedent_idx, antecedent_scores), _ \
+        (span_starts, span_ends, antecedent_indices, antecedent_scores), _ \
                     = self.model.forward(input_ids=input_ids,
                                          input_mask=input_mask,
                                          speaker_ids=speaker_ids,
@@ -169,11 +169,11 @@ class CorefSystem:
 
         span_starts = span_starts.tolist()
         span_ends = span_ends.tolist()
-        antecedent_idx = antecedent_idx.tolist()
+        antecedent_indices = antecedent_indices.tolist()
         antecedent_scores = antecedent_scores.tolist()
 
         # Get predicted antecedents
-        predicted_antecedents = self.get_predicted_antecedents(antecedent_idx=antecedent_idx, antecedent_scores=antecedent_scores)
+        predicted_antecedents = self.get_predicted_antecedents(antecedent_indices=antecedent_indices, antecedent_scores=antecedent_scores)
 
         # Get clusters
         predicted_clusters, mention_to_predicted = self.get_predicted_clusters(
@@ -192,11 +192,11 @@ class CorefSystem:
 
         return predicted_clusters, evaluator
 
-    def get_predicted_antecedents(self, antecedent_idx, antecedent_scores):
+    def get_predicted_antecedents(self, antecedent_indices, antecedent_scores):
         """
         Parameters
         ----------
-        antecedent_idx: list[list[int]]
+        antecedent_indices: list[list[int]]
             shape (n_top_spans, n_ant_spans)
         antecedent_scores: list[list[float]]
             shape (n_top_spans, 1 + n_ant_spans)
@@ -215,7 +215,7 @@ class CorefSystem:
             else:
                 # The maximum antecedent score is positive,
                 # and the selected antecedent is not dummy.
-                predicted_antecedents.append(antecedent_idx[i][idx])
+                predicted_antecedents.append(antecedent_indices[i][idx])
         return predicted_antecedents
 
     def get_predicted_clusters(self, span_starts, span_ends, predicted_antecedents):
@@ -233,7 +233,7 @@ class CorefSystem:
         """
         # Get predicted clusters
         predicted_clusters = [] # list[list[(int, int)]]
-        mention_to_cluster_id = {} # dict[(int, int), list[(int, int)]]
+        mention_to_cluster_id = {} # dict[(int, int), int]
         for mention_i, antecedent_i in enumerate(predicted_antecedents):
             # No coreference
             if antecedent_i < 0:

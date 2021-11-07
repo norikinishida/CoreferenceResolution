@@ -8,7 +8,7 @@ CRAFT=/home/norikinishida/storage/dataset/CRAFT.v4
 # SCORER=xxx
 
 GOLD=/home/norikinishida/storage/dataset/CRAFT.v4/coref-conll
-PRED=/home/norikinishida/storage/projects/discourse/CoreferenceResolution/results/main.joshi2020_pubmedbert_base_craft
+PRED=/home/norikinishida/storage/projects/discourse/coreference-resolution/results/main.joshi2020_pubmedbertbase_craft
 
 python prepare_for_evaluation.py \
     --gold ${GOLD} \

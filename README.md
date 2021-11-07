@@ -1,7 +1,5 @@
 # coreference-resolution
 
-(c) 2021 Noriki Nishida
-
 This repository is an implementation of coreference resolution models:
 
 - End-to-end coreference resolution model using BERT/SpanBERT ([Joshi et al., 2019](https://aclanthology.org/D19-1588); [Joshi et al., 2020](https://aclanthology.org/2020.tacl-1.5))
@@ -13,27 +11,35 @@ This repository is an implementation of coreference resolution models:
 - huggingface
 - jsonlines
 - pyprind
-- https://github.com/norikinishida/utils.git
+- https://github.com/norikinishida/utils
 
 ## Configuration
 
 The following files need to be editted according to your environment.
 
-- config/path.conf
-- run_preprocessing.sh
+- `config/path.conf`
+- `run_preprocessing.sh`
 
 ## Preprocessing
 
-Please see ./run_preprocessing.sh for details.
+Please see `./run_preprocessing.sh` for details.
 
-Preprocessed datasets (\*.npy) and gold annotations (\*.\*_conll) will be finally generated as follows:
+Outputs:
 
-- /path/to/caches/ontonotes.{train,dev,test}.english.{384,512}.bert-base-cased.npy
-- /path/to/caches/ontonotes.{train,dev,test}.english.v4_gold_conll
-- /path/to/caches/craft.{train,dev,test}.english.{384,512}.bert-base-cased.npy
-- /path/to/caches/craft.{train,dev,test}.english.{gold_conll,gold_original_conll}
+- Preprocessed datasets: `<caches>/{ontonotes,craft}.{train,dev,test}.english.{384,512}.bert-base-cased.npy`
+- Gold annotations: `<caches>/{ontonotes,craft}.{train,dev,test}.english.{v4_gold_conll,gold_conll,gold_original_conll}`
+
+`<caches>` is specified in `./config/path.conf`.
 
 ## Training
+
+Experiment configurations are found in `./config` (e.g., `joshi2020.conf`).
+You can also add your own configuration.
+Choose a configuration name (e.g., `joshi2020_spanbertlarge_ontonotes`), and run
+
+```
+python main.py --gpu <gpu_id> --config <config_name> --actiontype train
+```
 
 The following command is an example to train an end-to-end CR model (Joshi+, 2020) using SpanBERT (large) on OntoNotes:
 
@@ -41,40 +47,52 @@ The following command is an example to train an end-to-end CR model (Joshi+, 202
 python main.py --gpu 0 --config joshi2020_spanbertlarge_ontonotes --actiontype train
 ```
 
-The following files will be generated:
+Results are stored in the `<results>/main.<config_name>` directory, where `<results>` is specified in `./config/path.conf`.
 
-- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.training.log
-- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.training.jsonl
-- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.validation.jsonl
-- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.model
+Outputs:
+- Log: `<results>/main.<config_name>/<prefix>.training.log`
+- Training losses: `<results>/main.<config_name>/<prefix>.training.jsonl`
+- Model parameters: `<results>/main.<config_name>/<prefix>.model`
+- Validation scores: `<results>/main.<config_name>/<prefix>.validation.jsonl`
+
+`<prefix>` is automatically determined based on the execution time, .e.g, `Jun09_01-23-45`.
 
 ## Evaluation
 
-The following command is an example to evaluate the end-to-end CR model on OntoNotes:
+The trained model can be evaluated on the test dataset using the following command:
 
 ```
-python main.py --gpu 0 --config joshi2020_spanbertlarge_ontonotes --prefix <date> --actiontype evaluate
+python main.py --gpu <gpu_id> --config <config_name> --prefix <prefix> --actiontype evaluate
 ```
 
-The following files will be generated:
+The following command is an example to evaluate the above model on the OntoNotes test set:
 
-- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.evaluation.log
-- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.evaluation.conll
-- /path/to/results/main.joshi2020_spanbertlarge_ontonotes/\<date\>.evaluation.json
+```
+python main.py --gpu 0 --config joshi2020_spanbertlarge_ontonotes --prefix Jun09_01-23-45 --actiontype evaluate
+```
+
+Results are stored in the `<results>/main.<config_name>` directory.
+
+Outputs:
+
+- Log: `<results>/main.<config_name>/<prefix>.evaluation.log`
+- Evaluation outputs (CoNLL format): `<results>/main.<config_name>/<prefix>.evaluation.conll`
+- Evaluation outputs (JSON format): `<results>/main.<config_name>/<prefix>.evaluation.clusters`
+- Evaluation scores: `<results>/main.<config_name>/<prefix>.evaluation.json`
 
 ### Evaluation on CRAFT using the official docker evaluation script
 
-We ran the following shell script in the ./craft-shared-tasks directory to perform the official craft-shared-task evaluation protocol on a prediction file: e.g, "Jul28_22-24-14.evaluation.conll".
+We ran the following shell script in the `./craft-shared-tasks` directory to perform the official craft-shared-task evaluation protocol on a prediction file: e.g, `Jul09_01-23-45.evaluation.conll`.
 
-Before running the shell script, you need to edit the paths (e.g., "CRAFT", "PRED", etc.) in the script appropriately.
+Before running the shell script, you need to edit the paths (e.g., `CRAFT`, `PRED`, etc.) in the script appropriately, and run
 
 ```
 ./run_docker_eval.sh
 ```
 
-The following files will be generated:
+Outputs:
 
-- /path/to/results/main.joshi2020_pubmedbertlarge_craft/files-to-evaluate/\<filename\>.conll
-- /path/to/results/main.joshi2020_pubmedbertlarge_craft/files-to-evaluate/coref_results.tsv
+- `<results>/main.<config_name>/files-to-evaluate/*.conll`
+- `<results>/main.<config_name>/files-to-evaluate/coref_results.tsv`
 
 
