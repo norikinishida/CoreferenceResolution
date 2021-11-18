@@ -48,24 +48,24 @@ class Joshi2020(nn.Module):
         if self.use_features:
             self.embed_span_width = shared_functions.make_embedding(dict_size=self.max_span_width, dim=config["feature_dim"])
         if self.use_head_attn:
-            self.ffnn_mention_attn = shared_functions.make_ffnn(feat_dim=self.bert_emb_dim, hidden_dims=0, output_dim=1, dropout=self.dropout)
+            self.mlp_mention_attn = shared_functions.make_mlp(input_dim=self.bert_emb_dim, hidden_dims=0, output_dim=1, dropout=self.dropout)
 
         # For mention scoring
-        self.ffnn_span_emb_score = shared_functions.make_ffnn(feat_dim=self.span_dim, hidden_dims=[config['ffnn_dim']] * config['ffnn_depth'], output_dim=1, dropout=self.dropout)
+        self.mlp_span_emb_score = shared_functions.make_mlp(input_dim=self.span_dim, hidden_dims=[config['mlp_dim']] * config['mlp_depth'], output_dim=1, dropout=self.dropout)
 
         # For mention scoring (prior)
         if self.use_features:
             self.embed_span_width_prior = shared_functions.make_embedding(dict_size=self.max_span_width, dim=config["feature_dim"])
-            self.ffnn_span_width_score = shared_functions.make_ffnn(feat_dim=config['feature_dim'], hidden_dims=[config['ffnn_dim']] * config['ffnn_depth'], output_dim=1, dropout=self.dropout)
+            self.mlp_span_width_score = shared_functions.make_mlp(input_dim=config['feature_dim'], hidden_dims=[config['mlp_dim']] * config['mlp_depth'], output_dim=1, dropout=self.dropout)
 
         # For coreference scoring (coarse-grained)
-        # self.coarse_bilinear = self.make_ffnn(feat_dim=self.span_dim, hidden_dims=0, output_dim=self.span_dim)
+        # self.coarse_bilinear = self.make_mlp(input_dim=self.span_dim, hidden_dims=0, output_dim=self.span_dim)
         self.biaffine_coref_score = shared_functions.Biaffine(input_dim=self.span_dim, output_dim=1, bias_x=False, bias_y=True)
 
         # For coreference scoring (prior)
         if self.use_features:
             self.embed_antecedent_distance_prior = shared_functions.make_embedding(dict_size=10, dim=config["feature_dim"])
-            self.ffnn_antecedent_distance_score = shared_functions.make_ffnn(feat_dim=config['feature_dim'], hidden_dims=0, output_dim=1, dropout=self.dropout)
+            self.mlp_antecedent_distance_score = shared_functions.make_mlp(input_dim=config['feature_dim'], hidden_dims=0, output_dim=1, dropout=self.dropout)
 
         # For coreference scoring (fine-grained)
         self.pair_dim = self.span_dim * 3 # mention, antecedent, product
@@ -80,7 +80,7 @@ class Joshi2020(nn.Module):
             self.embed_segment_distance = shared_functions.make_embedding(dict_size=config['max_training_segments'], dim=config["feature_dim"])
             self.embed_top_antecedent_distance = shared_functions.make_embedding(dict_size=10, dim=config["feature_dim"])
 
-        self.ffnn_coref_score = shared_functions.make_ffnn(feat_dim=self.pair_dim, hidden_dims=[config['ffnn_dim']] * config['ffnn_depth'], output_dim=1, dropout=self.dropout)
+        self.mlp_coref_score = shared_functions.make_mlp(input_dim=self.pair_dim, hidden_dims=[config['mlp_dim']] * config['mlp_depth'], output_dim=1, dropout=self.dropout)
 
         ########################
         # Others
@@ -217,7 +217,7 @@ class Joshi2020(nn.Module):
 
         # Get span attention embedding
         if self.config["use_head_attn"]:
-            token_attns = torch.squeeze(self.ffnn_mention_attn(token_embs), 1) # (n_tokens,)
+            token_attns = torch.squeeze(self.mlp_mention_attn(token_embs), 1) # (n_tokens,)
             doc_range = torch.arange(0, n_tokens).to(self.device) # (n_tokens,)
             doc_range_1 = cand_span_start_token_indices.unsqueeze(1) <= doc_range # (n_cand_spans, n_tokens)
             doc_range_2 = doc_range <= cand_span_end_token_indices.unsqueeze(1) # (n_cand_spans, n_tokens)
@@ -246,11 +246,11 @@ class Joshi2020(nn.Module):
         ###################################
 
         # Get mention scores
-        cand_span_mention_scores = torch.squeeze(self.ffnn_span_emb_score(cand_span_embs), 1) # (n_cand_spans,)
+        cand_span_mention_scores = torch.squeeze(self.mlp_span_emb_score(cand_span_embs), 1) # (n_cand_spans,)
 
         # + Prior (span width)
         if self.use_features:
-            width_scores = torch.squeeze(self.ffnn_span_width_score(self.embed_span_width_prior.weight), 1) # (max_span_width,)
+            width_scores = torch.squeeze(self.mlp_span_width_score(self.embed_span_width_prior.weight), 1) # (max_span_width,)
             cand_span_width_scores = width_scores[cand_span_width_indices] # (n_cand_spans,)
             cand_span_mention_scores = cand_span_mention_scores + cand_span_width_scores
 
@@ -320,7 +320,7 @@ class Joshi2020(nn.Module):
 
         # + Prior (antecedent distance)
         if self.use_features:
-            distance_scores = torch.squeeze(self.ffnn_antecedent_distance_score(self.dropout(self.embed_antecedent_distance_prior.weight)), 1)
+            distance_scores = torch.squeeze(self.mlp_antecedent_distance_score(self.dropout(self.embed_antecedent_distance_prior.weight)), 1)
             bucketed_distances = util.bucket_distance(antecedent_offsets)
             antecedent_distance_scores = distance_scores[bucketed_distances]
             pairwise_coref_scores = pairwise_coref_scores + antecedent_distance_scores
@@ -405,7 +405,7 @@ class Joshi2020(nn.Module):
             # Get fine-grained coreference scores
             ###################################
 
-            top_antecedent_scores_fine = torch.squeeze(self.ffnn_coref_score(pair_embs), 2) # (n_top_spans, n_ant_spans)
+            top_antecedent_scores_fine = torch.squeeze(self.mlp_coref_score(pair_embs), 2) # (n_top_spans, n_ant_spans)
             top_antecedent_scores = top_antecedent_scores_coarse + top_antecedent_scores_fine # (n_top_spans, n_ant_spans)
 
         else:
