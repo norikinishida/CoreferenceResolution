@@ -1,3 +1,5 @@
+import random
+
 import torch
 import torch.nn as nn
 from transformers import AutoModel
@@ -108,41 +110,67 @@ class Joshi2020(nn.Module):
     # Forwarding
     ################
 
-    def forward(self,
-                input_ids,
-                input_mask,
-                speaker_ids,
-                segment_len, # never used
-                genre,
-                sentence_map,
-                is_training,  # never used
-                gold_starts=None,
-                gold_ends=None,
-                gold_mention_cluster_map=None):
+    def forward(self, data, get_loss):
         """
         Parameters
         ----------
-        input_ids: torch.tensor(shape=(n_segs, max_seg_len))
-        input_mask: torch.Tensor(shape=(n_segs, max_seg_len))
-        speaker_ids: torch.Tensor(shape=(n_segs, max_seg_len))
-        segment_len: torch.Tensor(shape=(n_segs,))
-        genre: torch.Tensor of long
-        sentence_map: torch.Tensor(shape=(n_tokens,))
-        is_training: torch.Tensor of bool
-        gold_starts: torch.Tensor(shape=(n_gold_spans,)), default None
-        gold_ends: torch.Tensor(shape=(n_gold_spans,)), default None
-        gold_mention_cluster_map: torch.Tensor(shape=(n_gold_spans,)), default None
+        data: DataInstance
+        get_loss: bool
 
         Returns
         (torch.Tensor(shape=(n_top_spans,)), torch.Tensor(shape=(n_top_spans,)), torch.Tensor(shape=(n_top_spans, n_ant_spans)), torch.Tensor(shape=(n_top_spans, n_ant_spans + 1)))
         torch.Tensor of float
         -------
         """
-        do_loss = False
-        if gold_mention_cluster_map is not None:
-            assert gold_starts is not None
-            assert gold_ends is not None
-            do_loss = True
+        ###################################
+        # <0> Tensorize inputs (and targets)
+        ###################################
+
+        input_ids = data.input_ids # (n_segs, max_seg_len)
+        input_mask = data.input_mask # (n_segs, max_seg_len)
+        speaker_ids = data.speaker_ids # (n_segs, max_seg_len)
+        segment_len = data.segment_len # (n_segs,)
+        genre = data.genre # int
+        sentence_map = data.sentence_map # (n_tokens,)
+        is_training = data.is_training # bool
+        if get_loss:
+            gold_starts = data.gold_starts # (n_gold_spans,)
+            gold_ends = data.gold_ends # (n_gold_spans,)
+            gold_mention_cluster_map = data.gold_mention_cluster_map # (n_gold_spans,)
+
+        if get_loss and len(data.segments) > self.config["truncation_size"]:
+            input_ids,\
+                input_mask,\
+                speaker_ids,\
+                segment_len,\
+                genre,\
+                sentence_map, \
+                is_training,\
+                gold_starts,\
+                gold_ends,\
+                gold_mention_cluster_map \
+                = self.truncate_example(input_ids=input_ids,
+                                        input_mask=input_mask,
+                                        speaker_ids=speaker_ids,
+                                        segment_len=segment_len,
+                                        genre=genre,
+                                        sentence_map=sentence_map,
+                                        is_training=is_training,
+                                        gold_starts=gold_starts,
+                                        gold_ends=gold_ends,
+                                        gold_mention_cluster_map=gold_mention_cluster_map)
+
+        input_ids = torch.tensor(input_ids, dtype=torch.long, device=self.device)
+        input_mask = torch.tensor(input_mask, dtype=torch.long, device=self.device)
+        speaker_ids = torch.tensor(speaker_ids, dtype=torch.long, device=self.device)
+        segment_len = torch.tensor(segment_len, dtype=torch.long, device=self.device)
+        genre = torch.tensor(genre, dtype=torch.long, device=self.device)
+        sentence_map = torch.tensor(sentence_map, dtype=torch.long, device=self.device)
+        is_training = torch.tensor(is_training, dtype=torch.bool, device=self.device)
+        if get_loss:
+            gold_starts = torch.tensor(gold_starts, dtype=torch.long, device=self.device)
+            gold_ends = torch.tensor(gold_ends, dtype=torch.long, device=self.device)
+            gold_mention_cluster_map = torch.tensor(gold_mention_cluster_map, dtype=torch.long, device=self.device)
 
         ###################################
         # <1> Embed tokens using BERT
@@ -190,7 +218,7 @@ class Joshi2020(nn.Module):
 
         n_cand_spans = cand_span_start_token_indices.shape[0]
 
-        if do_loss:
+        if get_loss:
             same_starts = (torch.unsqueeze(gold_starts, 1) == torch.unsqueeze(cand_span_start_token_indices, 0)) # (n_gold_spans, n_cand_spans)
             same_ends = (torch.unsqueeze(gold_ends, 1) == torch.unsqueeze(cand_span_end_token_indices, 0)) # (n_gold_spans, n_cand_spans)
             same_spans = (same_starts & same_ends).to(torch.long) # (n_gold_spans, n_cand_spans)
@@ -222,7 +250,7 @@ class Joshi2020(nn.Module):
             doc_range_1 = cand_span_start_token_indices.unsqueeze(1) <= doc_range # (n_cand_spans, n_tokens)
             doc_range_2 = doc_range <= cand_span_end_token_indices.unsqueeze(1) # (n_cand_spans, n_tokens)
             cand_span_token_mask = doc_range_1 & doc_range_2 # (n_cand_spans, n_tokens)
-            if do_loss:
+            if get_loss:
                 cand_span_token_attns = torch.log(cand_span_token_mask.float()) + torch.unsqueeze(token_attns, 0) # (n_cand_spans, n_tokens); masking for spans (w/ broadcasting)
                 cand_span_token_attns = nn.functional.softmax(cand_span_token_attns, dim=1) # (n_cand_spans, n_tokens)
                 cand_span_ha_embs = torch.matmul(cand_span_token_attns, token_embs) # (n_cand_spans, tok_dim)
@@ -273,7 +301,7 @@ class Joshi2020(nn.Module):
         top_span_start_token_indices = cand_span_start_token_indices[top_span_indices] # (n_top_spans,); token index
         top_span_end_token_indices = cand_span_end_token_indices[top_span_indices] # (n_top_spans,); token index
         top_span_embs = cand_span_embs[top_span_indices] # (n_top_spans, span_dim)
-        if do_loss:
+        if get_loss:
             top_span_cluster_ids = cand_span_cluster_ids[top_span_indices] # (n_top_spans,); cluster ids
         top_span_mention_scores = cand_span_mention_scores[top_span_indices] # (n_top_spans,)
 
@@ -329,7 +357,7 @@ class Joshi2020(nn.Module):
         # <7> Select top-K-ranked antecedents for each top-ranked span
         ###################################
 
-        # NOTE: antecedentsはcoarse-grained coreference scoresに基づいて選択される
+        # NOTE: Antecedents are selected based on coarse-grained coreference scores
 
         n_ant_spans = min(n_top_spans, self.config['max_top_antecedents'])
         top_antecedent_scores_coarse, top_antecedent_indices = torch.topk(pairwise_coref_scores, k=n_ant_spans) # (n_top_spans, n_ant_spans), (n_top_spans, n_ant_spans); j-th best top-span index for i-th top-span
@@ -340,7 +368,7 @@ class Joshi2020(nn.Module):
         # <8> Compute fine-grained coreference scores for the top-ranked coreference pairs
         ###################################
 
-        # NOTE: lossはfine-grained coreference scoresに基づいて計算される
+        # NOTE: Loss is computed based on fine-grained coreference scores
 
         if self.config['fine_grained']:
 
@@ -414,7 +442,7 @@ class Joshi2020(nn.Module):
         # Append a constrant 0 vector to the first column
         top_antecedent_scores = torch.cat([torch.zeros(n_top_spans, 1, device=self.device), top_antecedent_scores], dim=1) # (n_top_spans, 1+n_ant_spans)
 
-        if not do_loss:
+        if not get_loss:
             return [top_span_start_token_indices, \
                     top_span_end_token_indices, \
                     top_antecedent_indices, \
@@ -500,7 +528,11 @@ class Joshi2020(nn.Module):
                 top_antecedent_indices,
                 top_antecedent_scores], loss
 
-    def _extract_top_spans(self, cand_span_indices_sorted, cand_span_start_token_indices, cand_span_end_token_indices, n_top_spans):
+    def _extract_top_spans(self,
+                           cand_span_indices_sorted,
+                           cand_span_start_token_indices,
+                           cand_span_end_token_indices,
+                           n_top_spans):
         """
         Parameters
         ----------
@@ -545,4 +577,42 @@ class Joshi2020(nn.Module):
         if len(selected_cand_span_indices) < n_top_spans:  # Padding
             selected_cand_span_indices += ([selected_cand_span_indices[0]] * (n_top_spans - len(selected_cand_span_indices)))
         return selected_cand_span_indices
+
+    def truncate_example(self,
+                         input_ids,
+                         input_mask,
+                         speaker_ids,
+                         segment_len,
+                         genre,
+                         sentence_map,
+                         is_training,
+                         gold_starts,
+                         gold_ends,
+                         gold_mention_cluster_map,
+                         segment_offset=None):
+        truncation_size = self.config["truncation_size"]
+        num_segments = input_ids.shape[0]
+        assert num_segments > truncation_size
+
+        # Get offsets
+        if segment_offset is None:
+            segment_offset = random.randint(0, num_segments - truncation_size) # Random!
+        word_offset = segment_len[:segment_offset].sum()
+        num_words = segment_len[segment_offset: segment_offset + truncation_size].sum()
+
+        # Extract continuous segments
+        input_ids = input_ids[segment_offset: segment_offset + truncation_size, :]
+        input_mask = input_mask[segment_offset: segment_offset + truncation_size, :]
+        speaker_ids = speaker_ids[segment_offset: segment_offset + truncation_size, :]
+        segment_len = segment_len[segment_offset: segment_offset + truncation_size]
+        sentence_map = sentence_map[word_offset: word_offset + num_words]
+
+        # Get gold spans within the window
+        gold_spans = (gold_starts < word_offset + num_words) & (gold_ends >= word_offset)
+        gold_starts = gold_starts[gold_spans] - word_offset # Adjust token indices
+        gold_ends = gold_ends[gold_spans] - word_offset # Adjust token indices
+        gold_mention_cluster_map = gold_mention_cluster_map[gold_spans]
+
+        return input_ids, input_mask, speaker_ids, segment_len, genre, sentence_map, \
+                is_training, gold_starts, gold_ends, gold_mention_cluster_map
 

@@ -4,14 +4,12 @@ import random
 
 import numpy as np
 import torch
-from torch.optim import Adam
-from torch.optim.lr_scheduler import LambdaLR
-from transformers import AdamW
 import jsonlines
 import pyprind
 
 import utils
 
+import shared_functions
 import systems
 import metrics
 import conll
@@ -97,19 +95,6 @@ def main(args):
     utils.writelog("path_test_pred: %s" % path_test_pred)
     utils.writelog("path_test_gold: %s" % path_test_gold)
     utils.writelog("path_test_json: %s" % path_test_json)
-
-    ##################
-    # Random seed
-    ##################
-
-    random_seed = 1234
-    random.seed(random_seed)
-    np.random.seed(random_seed)
-    torch.manual_seed(random_seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    torch.cuda.manual_seed_all(random_seed)
-    utils.writelog("random_seed: %d" % random_seed)
 
     ##################
     # Data preparation
@@ -232,8 +217,8 @@ def train(config,
     total_update_steps = n_train * max_epoch // batch_size
     warmup_steps = int(total_update_steps * config["warmup_ratio"])
 
-    optimizers = get_optimizer(model=system.model, config=config)
-    schedulers = get_scheduler(optimizers=optimizers, total_update_steps=total_update_steps, warmup_steps=warmup_steps)
+    optimizers = shared_functions.get_optimizer(model=system.model, config=config)
+    schedulers = shared_functions.get_scheduler(optimizers=optimizers, total_update_steps=total_update_steps, warmup_steps=warmup_steps)
 
     utils.writelog("********************Training********************")
     utils.writelog("n_train: %d" % n_train)
@@ -368,76 +353,10 @@ def train(config,
     writer_valid.close()
 
 
-def get_optimizer(model, config):
-    """
-    Parameters
-    ----------
-    model: CorefModel
-    config: utils.Config
-
-    Returns
-    -------
-    [transformers.AdamW, torch.optim.Adam]
-    """
-    no_decay = ['bias', 'LayerNorm.weight']
-    bert_param, task_param = model.get_params(named=True)
-    grouped_bert_param = [
-        {
-            'params': [p for n, p in bert_param if not any(nd in n for nd in no_decay)],
-            'lr': config['bert_learning_rate'],
-            'weight_decay': config['adam_weight_decay'],
-        },
-        {
-            'params': [p for n, p in bert_param if any(nd in n for nd in no_decay)],
-            'lr': config['bert_learning_rate'],
-            'weight_decay': 0.0
-        }
-    ]
-    optimizers = [
-        AdamW(grouped_bert_param, lr=config['bert_learning_rate'], eps=config['adam_eps']), # NOTE: Comment out this line for freezing SpanBERT
-        Adam(model.get_params()[1], lr=config['task_learning_rate'], eps=config['adam_eps'], weight_decay=0)
-    ]
-    return optimizers
-
-
-def get_scheduler(optimizers, total_update_steps, warmup_steps):
-    """
-    Parameters
-    ----------
-    optimizers: [transformers.AdamW, torch.optim.Adam]
-    total_update_steps: int
-    warmup_steps: int
-
-    Returns
-    -------
-    list[torch.optim.lr_scheduler.LambdaLR]
-    """
-    # Only warm up bert lr
-    def lr_lambda_bert(current_step):
-        if current_step < warmup_steps:
-            return float(current_step) / float(max(1, warmup_steps))
-        return max(
-                0.0, float(total_update_steps - current_step) / float(max(1, total_update_steps - warmup_steps))
-            )
-
-    def lr_lambda_task(current_step):
-        return max(0.0, float(total_update_steps - current_step) / float(max(1, total_update_steps)))
-
-    # NOTE: Modified for freezing SpanBERT
-    schedulers = [
-        LambdaLR(optimizers[0], lr_lambda_bert),
-        LambdaLR(optimizers[1], lr_lambda_task)
-    ]
-    # schedulers = [
-    #     LambdaLR(optimizers[0], lr_lambda_task)
-    # ]
-    return schedulers
-    # return LambdaLR(optimizer, [lr_lambda_bert, lr_lambda_bert, lr_lambda_task, lr_lambda_task])
-
-
 #####################################
 # Evaluation
 #####################################
+
 
 def evaluate(config,
              system,
@@ -469,12 +388,14 @@ def evaluate(config,
 
     evaluator = metrics.CorefEvaluator()
     doc_to_prediction = {}
+    doc_to_prediction_text = {}
     for data in pyprind.prog_bar(dataset):
         predicted_clusters, evaluator = \
                 system.predict(data=data, evaluator=evaluator, gold_clusters=data.gold_clusters)
         if not official:
             # for time saving
             doc_to_prediction[data.doc_key] = predicted_clusters # unused
+            doc_to_prediction_text[data.doc_key] = predicted_clusters # unused
         else:
             # NOTE: Multiple subtoken-level spans can be the same word-level span.
 
@@ -526,6 +447,7 @@ def evaluate(config,
                 new_predicted_clusters.append(new_cluster)
 
             doc_to_prediction[data.doc_key] = new_predicted_clusters
+            doc_to_prediction_text[data.doc_key] = [[" ".join(subtokens[begin: end + 1]) for begin, end in cluster] for cluster in new_predicted_clusters]
 
     # Evaluate by the official script in the CoNLL 2012 shared task
     if official:
@@ -553,6 +475,7 @@ def evaluate(config,
         #         new_doc_to_prediction[doc_key].append(new_cluster)
         # utils.write_json(path_pred.replace(".conll", ".clusters"), new_doc_to_prediction)
         utils.write_json(path_pred.replace(".conll", ".clusters"), doc_to_prediction)
+        utils.write_json(path_pred.replace(".conll", ".clusters_text"), doc_to_prediction_text)
 
     precision, recall, f1 = evaluator.get_prf()
     scores["Average precision (py)"] = precision * 100.0

@@ -252,8 +252,8 @@ def get_sentence_map(segments, sentence_end):
             sent_map.append(sent_idx)
             sent_idx += int(sentence_end[subtok_idx])
             subtok_idx += 1
-        sent_map.append(sent_idx)  # [SEP]
-        # sent_map.append(sent_idx - 1)  # [SEP]
+        # sent_map.append(sent_idx)  # [SEP] is the next sentence's first token
+        sent_map.append(sent_idx - 1)  # [SEP] is the current senence's last token
     return sent_map
 
 

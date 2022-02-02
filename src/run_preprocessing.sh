@@ -171,7 +171,7 @@ done
 for seg_len in 384 512
 do
     python ./preprocessing/preprocess2.py \
-        --input_file ${STORAGE_DATA}/acl-preprocessed/acl.train.english.${seg_len}`basename ${TOKENIZER}`.jsonlines \
+        --input_file ${STORAGE_DATA}/acl-preprocessed/acl.train.english.${seg_len}.`basename ${TOKENIZER}`.jsonlines \
         --is_training 1 \
         --tokenizer_name ${TOKENIZER} \
         --seg_len ${seg_len}
