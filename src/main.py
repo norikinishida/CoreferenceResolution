@@ -331,7 +331,7 @@ def train(config,
                         utils.writelog(utils.pretty_format_dict(scores))
 
                     did_update = bestscore_holder.compare_scores(scores["Average F1 (py)"], step)
-                    utils.writelog("[Step %d] Validation max F1: %f" % (step, bestscore_holder.best_score))
+                    utils.writelog("[Step %d] Max validation F1: %f" % (step, bestscore_holder.best_score))
 
                     if did_update:
                         system.save_model(path=path_snapshot)
