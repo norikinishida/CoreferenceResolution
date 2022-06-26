@@ -51,9 +51,9 @@ Results are stored in the `<results>/main.<config_name>` directory, where `<resu
 
 Outputs:
 - Log: `<results>/main.<config_name>/<prefix>.training.log`
-- Training losses: `<results>/main.<config_name>/<prefix>.training.jsonl`
+- Training losses: `<results>/main.<config_name>/<prefix>.train.losses.jsonl`
 - Model parameters: `<results>/main.<config_name>/<prefix>.model`
-- Validation scores: `<results>/main.<config_name>/<prefix>.validation.jsonl`
+- Validation scores: `<results>/main.<config_name>/<prefix>.valid.eval.jsonl`
 
 `<prefix>` is automatically determined based on the execution time, .e.g, `Jun09_01-23-45`.
 
@@ -76,9 +76,9 @@ Results are stored in the `<results>/main.<config_name>` directory.
 Outputs:
 
 - Log: `<results>/main.<config_name>/<prefix>.evaluation.log`
-- Evaluation outputs (CoNLL format): `<results>/main.<config_name>/<prefix>.evaluation.conll`
-- Evaluation outputs (JSON format): `<results>/main.<config_name>/<prefix>.evaluation.clusters`
-- Evaluation scores: `<results>/main.<config_name>/<prefix>.evaluation.json`
+- Evaluation outputs (CoNLL format): `<results>/main.<config_name>/<prefix>.test.pred.conll`
+- Evaluation outputs (JSON format): `<results>/main.<config_name>/<prefix>.test.pred.clusters`
+- Evaluation scores: `<results>/main.<config_name>/<prefix>.test.eval.json`
 
 ### Evaluation on CRAFT using the official docker evaluation script
 

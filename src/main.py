@@ -54,18 +54,18 @@ def main(args):
         path_log = os.path.join(config["results"], base_dir, prefix + ".evaluation.log")
 
     # Training loss and etc.
-    path_train_jsonl = os.path.join(config["results"], base_dir, prefix + ".training.jsonl")
+    path_train_losses = os.path.join(config["results"], base_dir, prefix + ".train.losses.jsonl")
 
     # Validation outputs and scores
-    path_valid_pred = os.path.join(config["results"], base_dir, prefix + ".validation.conll")
-    path_valid_jsonl = os.path.join(config["results"], base_dir, prefix + ".validation.jsonl")
+    path_valid_pred = os.path.join(config["results"], base_dir, prefix + ".valid.pred.conll")
+    path_valid_eval = os.path.join(config["results"], base_dir, prefix + ".valid.eval.jsonl")
 
     # Model snapshot
     path_snapshot = os.path.join(config["results"], base_dir, prefix + ".model")
 
     # Evaluation outputs and scores
-    path_test_pred = os.path.join(config["results"], base_dir, prefix + ".evaluation.conll")
-    path_test_json = os.path.join(config["results"], base_dir, prefix + ".evaluation.json")
+    path_test_pred = os.path.join(config["results"], base_dir, prefix + ".test.pred.conll")
+    path_test_eval = os.path.join(config["results"], base_dir, prefix + ".test.eval.json")
 
     # Gold data for validation and evaluation
     if config["dataset"] == "ontonotes":
@@ -87,14 +87,14 @@ def main(args):
     utils.writelog(config)
 
     utils.writelog("path_log: %s" % path_log)
-    utils.writelog("path_train_jsonl: %s" % path_train_jsonl)
+    utils.writelog("path_train_losses: %s" % path_train_losses)
+    utils.writelog("path_snapshot: %s" % path_snapshot)
     utils.writelog("path_valid_pred: %s" % path_valid_pred)
     utils.writelog("path_valid_gold: %s" % path_valid_gold)
-    utils.writelog("path_valid_jsonl: %s" % path_valid_jsonl)
-    utils.writelog("path_snapshot: %s" % path_snapshot)
+    utils.writelog("path_valid_eval: %s" % path_valid_eval)
     utils.writelog("path_test_pred: %s" % path_test_pred)
     utils.writelog("path_test_gold: %s" % path_test_gold)
-    utils.writelog("path_test_json: %s" % path_test_json)
+    utils.writelog("path_test_eval: %s" % path_test_eval)
 
     ##################
     # Data preparation
@@ -149,10 +149,10 @@ def main(args):
               system=system,
               train_dataset=train_dataset,
               dev_dataset=dev_dataset,
-              path_train_jsonl=path_train_jsonl,
+              path_train_losses=path_train_losses,
               path_valid_pred=None,
               path_valid_gold=None,
-              path_valid_jsonl=path_valid_jsonl,
+              path_valid_eval=path_valid_eval,
               path_snapshot=path_snapshot)
 
     elif actiontype == "evaluate":
@@ -164,18 +164,18 @@ def main(args):
                               official=True,
                               path_pred=path_test_pred,
                               path_gold=path_test_gold)
-            utils.write_json(path_test_json, scores)
+            utils.write_json(path_test_eval, scores)
             utils.writelog(utils.pretty_format_dict(scores))
 
     utils.writelog("path_log: %s" % path_log)
-    utils.writelog("path_train_jsonl: %s" % path_train_jsonl)
+    utils.writelog("path_train_losses: %s" % path_train_losses)
     utils.writelog("path_valid_pred: %s" % path_valid_pred)
     utils.writelog("path_valid_gold: %s" % path_valid_gold)
-    utils.writelog("path_valid_jsonl: %s" % path_valid_jsonl)
+    utils.writelog("path_valid_eval: %s" % path_valid_eval)
     utils.writelog("path_snapshot: %s" % path_snapshot)
     utils.writelog("path_test_pred: %s" % path_test_pred)
     utils.writelog("path_test_gold: %s" % path_test_gold)
-    utils.writelog("path_test_json: %s" % path_test_json)
+    utils.writelog("path_test_eval: %s" % path_test_eval)
     utils.writelog("Done.")
     sw.stop("main")
     utils.writelog("Time: %f min." % sw.get_time("main", minute=True))
@@ -190,10 +190,10 @@ def train(config,
           system,
           train_dataset,
           dev_dataset,
-          path_train_jsonl,
+          path_train_losses,
           path_valid_pred,
           path_valid_gold,
-          path_valid_jsonl,
+          path_valid_eval,
           path_snapshot):
     """
     Parameters
@@ -202,10 +202,10 @@ def train(config,
     system: System
     train_dataset: numpy.ndarray
     dev_dataset: numpy.ndarray
-    path_train_jsonl: str
+    path_train_losses: str
     path_valid_pred: str or None
     path_valid_gold: str or None
-    path_valid_jsonl: str
+    path_valid_eval: str
     path_snapshot: str
     """
     torch.autograd.set_detect_anomaly(True)
@@ -227,8 +227,8 @@ def train(config,
     utils.writelog("total_update_steps: %d" % total_update_steps)
     utils.writelog("warmup_steps: %d" % warmup_steps)
 
-    writer_train = jsonlines.Writer(open(path_train_jsonl, "w"), flush=True)
-    writer_valid = jsonlines.Writer(open(path_valid_jsonl, "w"), flush=True)
+    writer_train = jsonlines.Writer(open(path_train_losses, "w"), flush=True)
+    writer_valid = jsonlines.Writer(open(path_valid_eval, "w"), flush=True)
     bestscore_holder = utils.BestScoreHolder(scale=1.0)
     bestscore_holder.init()
     step = 0
