@@ -57,8 +57,8 @@ def main(args):
     path_train_losses = os.path.join(config["results"], base_dir, prefix + ".train.losses.jsonl")
 
     # Validation outputs and scores
-    path_valid_pred = os.path.join(config["results"], base_dir, prefix + ".valid.pred.conll")
-    path_valid_eval = os.path.join(config["results"], base_dir, prefix + ".valid.eval.jsonl")
+    path_dev_pred = os.path.join(config["results"], base_dir, prefix + ".dev.pred.conll")
+    path_dev_eval = os.path.join(config["results"], base_dir, prefix + ".dev.eval.jsonl")
 
     # Model snapshot
     path_snapshot = os.path.join(config["results"], base_dir, prefix + ".model")
@@ -69,10 +69,10 @@ def main(args):
 
     # Gold data for validation and evaluation
     if config["dataset"] == "ontonotes":
-        path_valid_gold = os.path.join(config["caches"], "ontonotes.dev.english.v4_gold_conll")
+        path_dev_gold = os.path.join(config["caches"], "ontonotes.dev.english.v4_gold_conll")
         path_test_gold = os.path.join(config["caches"], "ontonotes.test.english.v4_gold_conll")
     elif config["dataset"] == "craft":
-        path_valid_gold = os.path.join(config["caches"], "craft.dev.english.gold_conll")
+        path_dev_gold = os.path.join(config["caches"], "craft.dev.english.gold_conll")
         path_test_gold = os.path.join(config["caches"], "craft.test.english.gold_conll")
     else:
         raise Exception("Never occur.")
@@ -89,9 +89,9 @@ def main(args):
     utils.writelog("path_log: %s" % path_log)
     utils.writelog("path_train_losses: %s" % path_train_losses)
     utils.writelog("path_snapshot: %s" % path_snapshot)
-    utils.writelog("path_valid_pred: %s" % path_valid_pred)
-    utils.writelog("path_valid_gold: %s" % path_valid_gold)
-    utils.writelog("path_valid_eval: %s" % path_valid_eval)
+    utils.writelog("path_dev_pred: %s" % path_dev_pred)
+    utils.writelog("path_dev_gold: %s" % path_dev_gold)
+    utils.writelog("path_dev_eval: %s" % path_dev_eval)
     utils.writelog("path_test_pred: %s" % path_test_pred)
     utils.writelog("path_test_gold: %s" % path_test_gold)
     utils.writelog("path_test_eval: %s" % path_test_eval)
@@ -119,7 +119,7 @@ def main(args):
         raise Exception("Never occur.")
 
     utils.writelog("Number of training data: %d" % len(train_dataset))
-    utils.writelog("Number of validation data: %d" % len(dev_dataset))
+    utils.writelog("Number of development data: %d" % len(dev_dataset))
     utils.writelog("Number of test data: %d" % len(test_dataset))
 
     sw.stop("data")
@@ -150,9 +150,9 @@ def main(args):
               train_dataset=train_dataset,
               dev_dataset=dev_dataset,
               path_train_losses=path_train_losses,
-              path_valid_pred=None,
-              path_valid_gold=None,
-              path_valid_eval=path_valid_eval,
+              path_dev_pred=None,
+              path_dev_gold=None,
+              path_dev_eval=path_dev_eval,
               path_snapshot=path_snapshot)
 
     elif actiontype == "evaluate":
@@ -169,9 +169,9 @@ def main(args):
 
     utils.writelog("path_log: %s" % path_log)
     utils.writelog("path_train_losses: %s" % path_train_losses)
-    utils.writelog("path_valid_pred: %s" % path_valid_pred)
-    utils.writelog("path_valid_gold: %s" % path_valid_gold)
-    utils.writelog("path_valid_eval: %s" % path_valid_eval)
+    utils.writelog("path_dev_pred: %s" % path_dev_pred)
+    utils.writelog("path_dev_gold: %s" % path_dev_gold)
+    utils.writelog("path_dev_eval: %s" % path_dev_eval)
     utils.writelog("path_snapshot: %s" % path_snapshot)
     utils.writelog("path_test_pred: %s" % path_test_pred)
     utils.writelog("path_test_gold: %s" % path_test_gold)
@@ -191,9 +191,9 @@ def train(config,
           train_dataset,
           dev_dataset,
           path_train_losses,
-          path_valid_pred,
-          path_valid_gold,
-          path_valid_eval,
+          path_dev_pred,
+          path_dev_gold,
+          path_dev_eval,
           path_snapshot):
     """
     Parameters
@@ -203,9 +203,9 @@ def train(config,
     train_dataset: numpy.ndarray
     dev_dataset: numpy.ndarray
     path_train_losses: str
-    path_valid_pred: str or None
-    path_valid_gold: str or None
-    path_valid_eval: str
+    path_dev_pred: str or None
+    path_dev_gold: str or None
+    path_dev_eval: str
     path_snapshot: str
     """
     torch.autograd.set_detect_anomaly(True)
@@ -228,7 +228,7 @@ def train(config,
     utils.writelog("warmup_steps: %d" % warmup_steps)
 
     writer_train = jsonlines.Writer(open(path_train_losses, "w"), flush=True)
-    writer_valid = jsonlines.Writer(open(path_valid_eval, "w"), flush=True)
+    writer_dev = jsonlines.Writer(open(path_dev_eval, "w"), flush=True)
     bestscore_holder = utils.BestScoreHolder(scale=1.0)
     bestscore_holder.init()
     step = 0
@@ -244,10 +244,10 @@ def train(config,
                           dataset=dev_dataset,
                           step=step,
                           official=False,
-                          path_pred=path_valid_pred,
-                          path_gold=path_valid_gold)
+                          path_pred=path_dev_pred,
+                          path_gold=path_dev_gold)
         scores["step"] = 0
-        writer_valid.write(scores)
+        writer_dev.write(scores)
         utils.writelog(utils.pretty_format_dict(scores))
 
         bestscore_holder.compare_scores(scores["Average F1 (py)"], 0)
@@ -324,10 +324,10 @@ def train(config,
                                           dataset=dev_dataset,
                                           step=step,
                                           official=False,
-                                          path_pred=path_valid_pred,
-                                          path_gold=path_valid_gold)
+                                          path_pred=path_dev_pred,
+                                          path_gold=path_dev_gold)
                         scores["step"] = step
-                        writer_valid.write(scores)
+                        writer_dev.write(scores)
                         utils.writelog(utils.pretty_format_dict(scores))
 
                     did_update = bestscore_holder.compare_scores(scores["Average F1 (py)"], step)
@@ -350,7 +350,7 @@ def train(config,
         #################
 
     writer_train.close()
-    writer_valid.close()
+    writer_dev.close()
 
 
 #####################################
