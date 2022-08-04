@@ -3,7 +3,7 @@
 ONTONOTES=/home/nishida/storage/dataset/OntoNotes-Release-5.0/ontonotes-release-5.0
 ACL=/home/nishida/storage/dataset/ACL-Coref/Coreference_annotated_corpus/head_auto_conlls
 
-STORAGE=/home/nishida/storage/projects/discourse/coreference-resolution
+STORAGE=/home/nishida/storage/projects/coreference-resolution
 STORAGE_DATA=${STORAGE}/data
 STORAGE_CACHES=${STORAGE}/caches
 
