@@ -47,13 +47,14 @@ The following command is an example to train an end-to-end CR model (Joshi+, 202
 python main.py --gpu 0 --config joshi2020_spanbertlarge_ontonotes --actiontype train
 ```
 
-Results are stored in the `<results>/main.<config_name>` directory, where `<results>` is specified in `./config/path.conf`.
+The results are stored in the `<results>/main/<config_name>` directory.
+`<results>` is specified in `./config/path.conf`.
 
 Outputs:
-- Log: `<results>/main.<config_name>/<prefix>.training.log`
-- Training losses: `<results>/main.<config_name>/<prefix>.train.losses.jsonl`
-- Model parameters: `<results>/main.<config_name>/<prefix>.model`
-- Validation scores: `<results>/main.<config_name>/<prefix>.dev.eval.jsonl`
+- Log: `<results>/main/<config_name>/<prefix>.training.log`
+- Training losses: `<results>/main/<config_name>/<prefix>.train.losses.jsonl`
+- Model parameters: `<results>/main/<config_name>/<prefix>.model`
+- Validation scores: `<results>/main/<config_name>/<prefix>.dev.eval.jsonl`
 
 `<prefix>` is automatically determined based on the execution time, .e.g, `Jun09_01-23-45`.
 
@@ -71,14 +72,14 @@ The following command is an example to evaluate the above model on the OntoNotes
 python main.py --gpu 0 --config joshi2020_spanbertlarge_ontonotes --prefix Jun09_01-23-45 --actiontype evaluate
 ```
 
-Results are stored in the `<results>/main.<config_name>` directory.
+Results are stored in the `<results>/main/<config_name>` directory.
 
 Outputs:
 
-- Log: `<results>/main.<config_name>/<prefix>.evaluation.log`
-- Evaluation outputs (CoNLL format): `<results>/main.<config_name>/<prefix>.test.pred.conll`
-- Evaluation outputs (JSON format): `<results>/main.<config_name>/<prefix>.test.pred.clusters`
-- Evaluation scores: `<results>/main.<config_name>/<prefix>.test.eval.json`
+- Log: `<results>/main/<config_name>/<prefix>.evaluation.log`
+- Evaluation outputs (CoNLL format): `<results>/main/<config_name>/<prefix>.test.pred.conll`
+- Evaluation outputs (JSON format): `<results>/main/<config_name>/<prefix>.test.pred.clusters`
+- Evaluation scores: `<results>/main/<config_name>/<prefix>.test.eval.json`
 
 ### Evaluation on CRAFT using the official docker evaluation script
 
@@ -92,7 +93,7 @@ Before running the shell script, you need to edit the paths (e.g., `CRAFT`, `PRE
 
 Outputs:
 
-- `<results>/main.<config_name>/files-to-evaluate/*.conll`
-- `<results>/main.<config_name>/files-to-evaluate/coref_results.tsv`
+- `<results>/main/<config_name>/files-to-evaluate/*.conll`
+- `<results>/main/<config_name>/files-to-evaluate/coref_results.tsv`
 
 

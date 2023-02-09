@@ -9,9 +9,9 @@ import pyprind
 
 import utils
 
-import shared_functions
 import systems
-import metrics
+import training
+import evaluation
 import conll
 
 
@@ -39,10 +39,10 @@ def main(args):
     sw.start("main")
 
     ##################
-    # Path setting
+    # Paths
     ##################
 
-    base_dir = "main.%s" % config_name
+    base_dir = "main/%s" % config_name
 
     utils.mkdir(os.path.join(config["results"], base_dir))
 
@@ -53,29 +53,40 @@ def main(args):
     elif actiontype == "evaluate":
         path_log = os.path.join(config["results"], base_dir, prefix + ".evaluation.log")
 
+    # Datasets for training, development, and evaluation
+    path_train_dataset = ""
+    path_dev_dataset = ""
+    path_dev_gold = ""
+    path_test_dataset = ""
+    path_test_gold = ""
+    if config["dataset"] == "ontonotes":
+        path_train_dataset = os.path.join(config["caches"], f"ontonotes.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy")
+        path_dev_dataset = os.path.join(config["caches"], f"ontonotes.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy")
+        path_test_dataset = os.path.join(config["caches"], f"ontonotes.test.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy")
+        path_dev_gold = os.path.join(config["caches"], "ontonotes.dev.english.v4_gold_conll")
+        path_test_gold = os.path.join(config["caches"], "ontonotes.test.english.v4_gold_conll")
+    elif config["dataset"] == "craft":
+        path_train_dataset = os.path.join(config["caches"], f"craft.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy")
+        path_dev_dataset = os.path.join(config["caches"], f"craft.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy")
+        path_test_dataset = os.path.join(config["caches"], f"craft.test.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy")
+        path_dev_gold = os.path.join(config["caches"], "craft.dev.english.gold_conll")
+        path_test_gold = os.path.join(config["caches"], "craft.test.english.gold_conll")
+    else:
+        raise Exception("Invalid dataset=%s" % config["dataset"])
+
     # Training loss and etc.
     path_train_losses = os.path.join(config["results"], base_dir, prefix + ".train.losses.jsonl")
+
+    # Model snapshot
+    path_snapshot = os.path.join(config["results"], base_dir, prefix + ".model")
 
     # Validation outputs and scores
     path_dev_pred = os.path.join(config["results"], base_dir, prefix + ".dev.pred.conll")
     path_dev_eval = os.path.join(config["results"], base_dir, prefix + ".dev.eval.jsonl")
 
-    # Model snapshot
-    path_snapshot = os.path.join(config["results"], base_dir, prefix + ".model")
-
     # Evaluation outputs and scores
     path_test_pred = os.path.join(config["results"], base_dir, prefix + ".test.pred.conll")
     path_test_eval = os.path.join(config["results"], base_dir, prefix + ".test.eval.json")
-
-    # Gold data for validation and evaluation
-    if config["dataset"] == "ontonotes":
-        path_dev_gold = os.path.join(config["caches"], "ontonotes.dev.english.v4_gold_conll")
-        path_test_gold = os.path.join(config["caches"], "ontonotes.test.english.v4_gold_conll")
-    elif config["dataset"] == "craft":
-        path_dev_gold = os.path.join(config["caches"], "craft.dev.english.gold_conll")
-        path_test_gold = os.path.join(config["caches"], "craft.test.english.gold_conll")
-    else:
-        raise Exception("Never occur.")
 
     utils.set_logger(path_log)
 
@@ -87,36 +98,27 @@ def main(args):
     utils.writelog(config)
 
     utils.writelog("path_log: %s" % path_log)
+    utils.writelog("path_train_dataset: %s" % path_train_dataset)
+    utils.writelog("path_dev_dataset: %s" % path_dev_dataset)
+    utils.writelog("path_dev_gold: %s" % path_dev_gold)
+    utils.writelog("path_test_dataset: %s" % path_test_dataset)
+    utils.writelog("path_test_gold: %s" % path_test_gold)
     utils.writelog("path_train_losses: %s" % path_train_losses)
     utils.writelog("path_snapshot: %s" % path_snapshot)
     utils.writelog("path_dev_pred: %s" % path_dev_pred)
-    utils.writelog("path_dev_gold: %s" % path_dev_gold)
     utils.writelog("path_dev_eval: %s" % path_dev_eval)
     utils.writelog("path_test_pred: %s" % path_test_pred)
-    utils.writelog("path_test_gold: %s" % path_test_gold)
     utils.writelog("path_test_eval: %s" % path_test_eval)
 
     ##################
-    # Data preparation
+    # Datasets
     ##################
 
     sw.start("data")
 
-    if config["dataset"] == "ontonotes":
-        if config["model_name"] == "joshi2020_discdep01":
-            train_dataset = np.load(os.path.join(config["caches"], f"ontonotes.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.with_spl.npy"), allow_pickle=True)
-            dev_dataset = np.load(os.path.join(config["caches"], f"ontonotes.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.with_spl.npy"), allow_pickle=True)
-            test_dataset = np.load(os.path.join(config["caches"], f"ontonotes.test.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.with_spl.npy"), allow_pickle=True)
-        else:
-            train_dataset = np.load(os.path.join(config["caches"], f"ontonotes.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
-            dev_dataset = np.load(os.path.join(config["caches"], f"ontonotes.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
-            test_dataset = np.load(os.path.join(config["caches"], f"ontonotes.test.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
-    elif config["dataset"] == "craft":
-        train_dataset = np.load(os.path.join(config["caches"], f"craft.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
-        dev_dataset = np.load(os.path.join(config["caches"], f"craft.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
-        test_dataset = np.load(os.path.join(config["caches"], f"craft.test.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy"), allow_pickle=True)
-    else:
-        raise Exception("Never occur.")
+    train_dataset = np.load(path_train_dataset, allow_pickle=True)
+    dev_dataset = np.load(path_dev_dataset, allow_pickle=True)
+    test_dataset = np.load(path_test_dataset, allow_pickle=True)
 
     utils.writelog("Number of training data: %d" % len(train_dataset))
     utils.writelog("Number of development data: %d" % len(dev_dataset))
@@ -126,7 +128,7 @@ def main(args):
     utils.writelog("Loaded the corpus. %f sec." % sw.get_time("data"))
 
     ##################
-    # System preparation
+    # System
     ##################
 
     system = systems.CorefSystem(
@@ -168,17 +170,23 @@ def main(args):
             utils.writelog(utils.pretty_format_dict(scores))
 
     utils.writelog("path_log: %s" % path_log)
-    utils.writelog("path_train_losses: %s" % path_train_losses)
-    utils.writelog("path_dev_pred: %s" % path_dev_pred)
+    utils.writelog("path_train_dataset: %s" % path_train_dataset)
+    utils.writelog("path_dev_dataset: %s" % path_dev_dataset)
     utils.writelog("path_dev_gold: %s" % path_dev_gold)
-    utils.writelog("path_dev_eval: %s" % path_dev_eval)
-    utils.writelog("path_snapshot: %s" % path_snapshot)
-    utils.writelog("path_test_pred: %s" % path_test_pred)
+    utils.writelog("path_test_dataset: %s" % path_test_dataset)
     utils.writelog("path_test_gold: %s" % path_test_gold)
+    utils.writelog("path_train_losses: %s" % path_train_losses)
+    utils.writelog("path_snapshot: %s" % path_snapshot)
+    utils.writelog("path_dev_pred: %s" % path_dev_pred)
+    utils.writelog("path_dev_eval: %s" % path_dev_eval)
+    utils.writelog("path_test_pred: %s" % path_test_pred)
     utils.writelog("path_test_eval: %s" % path_test_eval)
+
     utils.writelog("Done.")
     sw.stop("main")
     utils.writelog("Time: %f min." % sw.get_time("main", minute=True))
+
+    return prefix
 
 
 #####################################
@@ -208,24 +216,31 @@ def train(config,
     path_dev_eval: str
     path_snapshot: str
     """
+    utils.writelog("********************Training********************")
     torch.autograd.set_detect_anomaly(True)
 
-    # Get optimizers and schedulers
+    #################
+    # Preparation of optimizers and schedulers
+    #################
+
     n_train = len(train_dataset)
     max_epoch = config["max_epoch"]
     batch_size = config["batch_size"]
     total_update_steps = n_train * max_epoch // batch_size
     warmup_steps = int(total_update_steps * config["warmup_ratio"])
 
-    optimizers = shared_functions.get_optimizer(model=system.model, config=config)
-    schedulers = shared_functions.get_scheduler(optimizers=optimizers, total_update_steps=total_update_steps, warmup_steps=warmup_steps)
-
-    utils.writelog("********************Training********************")
     utils.writelog("n_train: %d" % n_train)
     utils.writelog("max_epoch: %d" % max_epoch)
     utils.writelog("batch_size: %d" % batch_size)
     utils.writelog("total_update_steps: %d" % total_update_steps)
     utils.writelog("warmup_steps: %d" % warmup_steps)
+
+    optimizers = training.get_optimizer(model=system.model, config=config)
+    schedulers = training.get_scheduler(optimizers=optimizers, total_update_steps=total_update_steps, warmup_steps=warmup_steps)
+
+    #################
+    # /Preparation of optimizers and schedulers
+    #################
 
     writer_train = jsonlines.Writer(open(path_train_losses, "w"), flush=True)
     writer_dev = jsonlines.Writer(open(path_dev_eval, "w"), flush=True)
@@ -250,13 +265,18 @@ def train(config,
         writer_dev.write(scores)
         utils.writelog(utils.pretty_format_dict(scores))
 
-        bestscore_holder.compare_scores(scores["Average F1 (py)"], 0)
+    bestscore_holder.compare_scores(scores["Average F1 (py)"], 0)
 
-        system.save_model(path=path_snapshot)
-        utils.writelog("Saved model to %s" % path_snapshot)
+    # Save the model
+    system.save_model(path=path_snapshot)
+    utils.writelog("Saved model to %s" % path_snapshot)
 
     #################
     # /Initial validation phase
+    #################
+
+    #################
+    # Training-and-validation loops
     #################
 
     system.model.zero_grad()
@@ -275,7 +295,7 @@ def train(config,
             # One data
             #################
 
-            # Forward
+            # Forward and compute loss
             loss = system.compute_loss(data=data)
             if batch_size > 1.0:
                 loss = loss / batch_size
@@ -349,6 +369,10 @@ def train(config,
         # /Training phase
         #################
 
+    #################
+    # /Training-and-validation loops
+    #################
+
     writer_train.close()
     writer_dev.close()
 
@@ -386,7 +410,7 @@ def evaluate(config,
 
     scores = {}
 
-    evaluator = metrics.CorefEvaluator()
+    evaluator = evaluation.CorefEvaluator()
     doc_to_prediction = {}
     doc_to_prediction_text = {}
     for data in pyprind.prog_bar(dataset):
@@ -496,6 +520,15 @@ if __name__ == "__main__":
     parser.add_argument("--actiontype", type=str, required=True)
     args = parser.parse_args()
     try:
-        main(args)
+        if args.actiontype == "train_and_evaluate":
+            # Training
+            args.actiontype = "train"
+            prefix = main(args=args)
+            # Evaluation
+            args.actiontype = "evaluate"
+            args.prefix = prefix
+            main(args=args)
+        else:
+            main(args=args)
     except Exception as e:
         utils.logger.error(e, exc_info=True)
