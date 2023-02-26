@@ -54,11 +54,6 @@ def main(args):
         path_log = os.path.join(config["results"], base_dir, prefix + ".evaluation.log")
 
     # Datasets for training, development, and evaluation
-    path_train_dataset = ""
-    path_dev_dataset = ""
-    path_dev_gold = ""
-    path_test_dataset = ""
-    path_test_gold = ""
     if config["dataset"] == "ontonotes":
         path_train_dataset = os.path.join(config["caches"], f"ontonotes.train.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy")
         path_dev_dataset = os.path.join(config["caches"], f"ontonotes.dev.english.{config['max_segment_len']}.{os.path.basename(config['bert_tokenizer_name'])}.npy")
